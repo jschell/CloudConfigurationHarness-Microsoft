@@ -1,0 +1,34 @@
+# Model role configuration for the FSM workflow runner (harness/engine/runner.py).
+#
+# Each role maps to a Claude Code CLI invocation environment. The runner
+# selects a role per workflow state (see the `role` field in
+# harness/workflows/*.yaml) and shells out to `claude -p ...` with the
+# corresponding ANTHROPIC_BASE_URL set, so Claude and GLM are driven
+# through the identical CLI, differing only by endpoint.
+#
+# ANTHROPIC_API_KEY for each role is NOT defined here. It is supplied via a
+# separate untracked harness/engine/.env file (gitignored) with one
+# variable per role, e.g.:
+#
+#   ORCHESTRATOR_ANTHROPIC_API_KEY=sk-ant-...
+#   EXECUTOR_CLAUDE_ANTHROPIC_API_KEY=sk-ant-...
+#   EXECUTOR_GLM_ANTHROPIC_API_KEY=...
+#
+# Never commit .env alongside this file, and never hardcode API keys here.
+
+roles:
+  orchestrator:
+    model: claude-opus-4-8
+    endpoint: anthropic
+    env:
+      ANTHROPIC_BASE_URL: https://api.anthropic.com
+  executor_claude:
+    model: claude-sonnet-5
+    endpoint: anthropic
+    env:
+      ANTHROPIC_BASE_URL: https://api.anthropic.com
+  executor_glm:
+    model: glm-5.2
+    endpoint: zai
+    env:
+      ANTHROPIC_BASE_URL: https://api.z.ai/api/coding/paas/v4
