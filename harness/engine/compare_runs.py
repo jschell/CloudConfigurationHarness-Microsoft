@@ -45,6 +45,13 @@ def _load_run(conn, run_id: int) -> dict[str, Any]:
     fixture = None
     runs = []
     if check_id:
+        # rules/fixtures are keyed by check_id with no per-run history --
+        # if two workflow_runs share a check_id (e.g. A/B'ing the same
+        # hypothesis), these two queries return whichever run most
+        # recently wrote that row, not necessarily *this* run's own
+        # outcome. `runs` is append-only and timestamped, so it's scoped
+        # to this run's own [created_at, updated_at] window to avoid
+        # attributing another run's adapter verdicts to this one.
         rule_row = conn.execute(
             "SELECT * FROM rules WHERE check_id = ?", (check_id,)
         ).fetchone()
@@ -56,7 +63,9 @@ def _load_run(conn, run_id: int) -> dict[str, Any]:
         runs = [
             dict(r)
             for r in conn.execute(
-                "SELECT * FROM runs WHERE check_id = ? ORDER BY id", (check_id,)
+                "SELECT * FROM runs WHERE check_id = ? AND run_at >= ? AND run_at <= ? "
+                "ORDER BY id",
+                (check_id, row["created_at"], row["updated_at"]),
             ).fetchall()
         ]
 
@@ -112,6 +121,15 @@ def _adapter_summary(runs: list[dict]) -> str:
 
 def compare(run_a: dict[str, Any], run_b: dict[str, Any]) -> str:
     lines = ["# A/B run comparison", ""]
+
+    if run_a["check_id"] and run_a["check_id"] == run_b["check_id"]:
+        lines.append(
+            f"Note: both runs share check_id {run_a['check_id']!r} -- rule/fixture "
+            "status below reflects whichever run most recently wrote that row "
+            "(no per-run history for those tables), not necessarily this run's "
+            "own outcome. Adapter verdicts are correctly scoped per run."
+        )
+        lines.append("")
 
     for label, run in (("A", run_a), ("B", run_b)):
         models_used = {v["model"] for v in run["model_map"].values()}
