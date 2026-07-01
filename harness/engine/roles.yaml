@@ -31,4 +31,8 @@ roles:
     model: glm-5.2
     endpoint: zai
     env:
-      ANTHROPIC_BASE_URL: https://api.z.ai/api/coding/paas/v4
+      # NOT the OpenAI-compatible .../api/coding/paas/v4 endpoint -- that
+      # one doesn't serve /v1/messages (404s), which is what `claude`
+      # actually calls. This is Z.ai's Anthropic-Messages-API-compatible
+      # endpoint, confirmed live with a real /v1/messages request.
+      ANTHROPIC_BASE_URL: https://api.z.ai/api/anthropic
