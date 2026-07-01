@@ -137,7 +137,16 @@ def _invoke_claude(role_name: str, roles: dict, prompt: str) -> str:
     env_file_values = load_env_file()
     api_key_var = f"{role_name.upper()}_ANTHROPIC_API_KEY"
     if api_key_var in env_file_values:
-        env["ANTHROPIC_API_KEY"] = env_file_values[api_key_var]
+        credential = env_file_values[api_key_var]
+        # `claude setup-token` issues long-lived OAuth tokens (prefix
+        # sk-ant-oat...) for headless use against a Claude subscription;
+        # those must go in CLAUDE_CODE_OAUTH_TOKEN, not ANTHROPIC_API_KEY,
+        # or the CLI rejects them with "Invalid API key".
+        if credential.startswith("sk-ant-oat"):
+            env["CLAUDE_CODE_OAUTH_TOKEN"] = credential
+            env.pop("ANTHROPIC_API_KEY", None)
+        else:
+            env["ANTHROPIC_API_KEY"] = credential
 
     result = subprocess.run(
         ["claude", "-p", prompt, "--output-format", "json", "--model", role["model"]],
