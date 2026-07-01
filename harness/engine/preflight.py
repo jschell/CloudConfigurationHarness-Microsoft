@@ -58,9 +58,14 @@ def _env_file_values() -> dict[str, str]:
 def check_az() -> Requirement:
     ok, detail = _which_ok("az")
     if ok:
-        # `az bicep build` needs the bicep component installed, not just the CLI.
+        # `az bicep build` needs the bicep component installed, not just the
+        # CLI. Use the resolved path (not the bare "az") -- on Windows it's
+        # a .cmd shim, and subprocess.run(list_form) doesn't apply PATHEXT
+        # resolution the way a shell does.
         result = subprocess.run(
-            ["az", "bicep", "version"], capture_output=True, text=True
+            [shutil.which("az") or "az", "bicep", "version"],
+            capture_output=True,
+            text=True,
         )
         if result.returncode != 0:
             ok = False

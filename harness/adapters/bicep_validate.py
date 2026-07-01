@@ -17,10 +17,23 @@ Interface (shared with rego_validate.py):
 
 from __future__ import annotations
 
+import shutil
 import subprocess
 from pathlib import Path
 
 ADAPTER_NAME = "bicep_validate"
+
+
+def _az() -> str:
+    """Resolve `az` to its actual executable path.
+
+    On Windows, `az` is a `.cmd` shim; passing the bare name "az" to
+    subprocess.run(list_form) fails with WinError 2 (Windows doesn't apply
+    PATHEXT resolution the way a shell does for the list-args form).
+    shutil.which() does the same PATHEXT-aware search a shell would and
+    returns the real path, which works cross-platform.
+    """
+    return shutil.which("az") or "az"
 
 
 def validate(
@@ -38,7 +51,7 @@ def validate(
     """
     fixture_path = Path(fixture_path)
     build = subprocess.run(
-        ["az", "bicep", "build", "--file", str(fixture_path), "--stdout"],
+        [_az(), "bicep", "build", "--file", str(fixture_path), "--stdout"],
         capture_output=True,
         text=True,
     )
@@ -60,7 +73,7 @@ def validate(
     if deployment_group:
         deploy = subprocess.run(
             [
-                "az",
+                _az(),
                 "deployment",
                 "group",
                 "validate",
@@ -94,7 +107,7 @@ def bicep_to_json(fixture_path: str | Path, out_path: str | Path) -> Path:
     out_path = Path(out_path)
     result = subprocess.run(
         [
-            "az",
+            _az(),
             "bicep",
             "build",
             "--file",
