@@ -3,3 +3,4 @@ __pycache__/
 harness/journal/*.db
 fixtures/**/vulnerable.json
 fixtures/**/safe.json
+.venv/

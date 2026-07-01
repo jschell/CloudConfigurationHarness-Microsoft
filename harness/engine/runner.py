@@ -46,6 +46,7 @@ import argparse
 import importlib
 import json
 import os
+import sqlite3
 import subprocess
 import sys
 from pathlib import Path
@@ -116,8 +117,8 @@ def _state_by_name(workflow: dict[str, Any], name: str) -> dict[str, Any] | None
     return None
 
 
-def _read_tables(conn, table_names: list[str]) -> dict[str, list[dict]]:
-    context = {}
+def _read_tables(conn: sqlite3.Connection, table_names: list[str]) -> dict[str, Any]:
+    context: dict[str, Any] = {}
     for table in table_names:
         rows = conn.execute(f"SELECT * FROM {table}").fetchall()
         context[table] = [dict(row) for row in rows]
@@ -202,9 +203,10 @@ class Runner:
         model_map = {}
         for wf_state in workflow["states"]:
             if "role" in wf_state:
-                resolved_role = self.role_override.get(wf_state["role"], wf_state["role"])
+                declared_role: str = wf_state["role"]
+                resolved_role = self.role_override.get(declared_role, declared_role)
                 model_map[wf_state["name"]] = {
-                    "declared_role": wf_state["role"],
+                    "declared_role": declared_role,
                     "resolved_role": resolved_role,
                     "model": self.roles[resolved_role]["model"],
                 }
@@ -215,9 +217,15 @@ class Runner:
         cur = self.conn.execute(
             "INSERT INTO workflow_runs (workflow_name, workflow_path, current_state, status, context_json) "
             "VALUES (?, ?, ?, 'running', ?)",
-            (workflow["workflow"], str(workflow_path), first_state, json.dumps(initial_context)),
+            (
+                workflow["workflow"],
+                str(workflow_path),
+                first_state,
+                json.dumps(initial_context),
+            ),
         )
         self.conn.commit()
+        assert cur.lastrowid is not None
         run_id = cur.lastrowid
         return self.resume(run_id, workflow_path)
 
@@ -240,7 +248,9 @@ class Runner:
             print(f"[runner] run={run_id} entering state '{state_name}'")
             success = self._execute_state(state, context)
 
-            next_state = state["next_on_success"] if success else state["next_on_failure"]
+            next_state = (
+                state["next_on_success"] if success else state["next_on_failure"]
+            )
             self.conn.execute(
                 "UPDATE workflow_runs SET current_state = ?, context_json = ?, "
                 "status = ?, updated_at = datetime('now') WHERE id = ?",
@@ -270,7 +280,9 @@ class Runner:
             return self._execute_gate_state(state, context)
         return self._execute_llm_state(state, context)
 
-    def _execute_llm_state(self, state: dict[str, Any], context: dict[str, Any]) -> bool:
+    def _execute_llm_state(
+        self, state: dict[str, Any], context: dict[str, Any]
+    ) -> bool:
         journal_context = _read_tables(self.conn, state.get("reads", []))
         journal_context["_run_context"] = context
         if state.get("read_files"):
@@ -278,9 +290,12 @@ class Runner:
         prompt_template = REPO_ROOT / state["prompt_template"]
         prompt = _render_prompt(prompt_template, journal_context)
 
-        role_name = self.role_override.get(state["role"], state["role"])
+        declared_role: str = state["role"]
+        role_name = self.role_override.get(declared_role, declared_role)
         raw_result = _invoke_claude(role_name, self.roles, prompt)
-        print(f"[runner] state '{state['name']}' role '{state['role']}' -> '{role_name}' model output: {raw_result}")
+        print(
+            f"[runner] state '{state['name']}' role '{declared_role}' -> '{role_name}' model output: {raw_result}"
+        )
         context[f"last_output::{state['name']}"] = raw_result
 
         if "handler" in state:
@@ -288,13 +303,17 @@ class Runner:
             return handler(self.conn, state, context, raw_result)
         return True
 
-    def _execute_adapter_state(self, state: dict[str, Any], context: dict[str, Any]) -> bool:
+    def _execute_adapter_state(
+        self, state: dict[str, Any], context: dict[str, Any]
+    ) -> bool:
         if state.get("requires"):
             preflight.require(state["requires"])
         handler = _resolve_handler(state["handler"])
         return handler(self.conn, state, context)
 
-    def _execute_gate_state(self, state: dict[str, Any], context: dict[str, Any]) -> bool:
+    def _execute_gate_state(
+        self, state: dict[str, Any], context: dict[str, Any]
+    ) -> bool:
         handler = _resolve_handler(state["handler"])
         return handler(self.conn, state, context)
 
@@ -305,10 +324,16 @@ def main():
     parser.add_argument("--resume", type=int, help="workflow_runs.id to resume")
     parser.add_argument("--db", type=Path, default=None)
     parser.add_argument(
-        "--start-state", type=str, default=None, help="state name to start at (default: first state)"
+        "--start-state",
+        type=str,
+        default=None,
+        help="state name to start at (default: first state)",
     )
     parser.add_argument(
-        "--context", type=str, default=None, help="JSON object seeding the initial run context"
+        "--context",
+        type=str,
+        default=None,
+        help="JSON object seeding the initial run context",
     )
     parser.add_argument(
         "--role-override",
@@ -326,7 +351,9 @@ def main():
         run_id = runner.resume(args.resume, args.workflow)
     else:
         initial_context = json.loads(args.context) if args.context else None
-        run_id = runner.start(args.workflow, start_state=args.start_state, initial_context=initial_context)
+        run_id = runner.start(
+            args.workflow, start_state=args.start_state, initial_context=initial_context
+        )
     print(f"[runner] finished workflow_runs.id={run_id}")
 
 

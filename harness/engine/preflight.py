@@ -64,7 +64,9 @@ def check_az() -> Requirement:
         )
         if result.returncode != 0:
             ok = False
-            detail = f"'az' found but 'az bicep version' failed: {result.stderr.strip()}"
+            detail = (
+                f"'az' found but 'az bicep version' failed: {result.stderr.strip()}"
+            )
     return Requirement(
         name="az",
         ok=ok,
@@ -141,7 +143,9 @@ def require(names: list[str]) -> None:
     `requires:` in its workflow YAML -- never silently substitutes a stub."""
     failures = [r for r in check(names) if not r.ok]
     if failures:
-        lines = [f"  - {r.name}: {r.detail} (install: {r.install_hint})" for r in failures]
+        lines = [
+            f"  - {r.name}: {r.detail} (install: {r.install_hint})" for r in failures
+        ]
         raise RuntimeError(
             "preflight requirement(s) not met, refusing to fake a result:\n"
             + "\n".join(lines)

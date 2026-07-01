@@ -93,7 +93,15 @@ def bicep_to_json(fixture_path: str | Path, out_path: str | Path) -> Path:
     fixture_path = Path(fixture_path)
     out_path = Path(out_path)
     result = subprocess.run(
-        ["az", "bicep", "build", "--file", str(fixture_path), "--outfile", str(out_path)],
+        [
+            "az",
+            "bicep",
+            "build",
+            "--file",
+            str(fixture_path),
+            "--outfile",
+            str(out_path),
+        ],
         capture_output=True,
         text=True,
     )

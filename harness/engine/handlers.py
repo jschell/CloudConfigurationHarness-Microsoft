@@ -19,7 +19,9 @@ each prompt template must produce):
 from __future__ import annotations
 
 import json
+import sqlite3
 from pathlib import Path
+from typing import Any
 
 from harness.adapters import bicep_validate, rego_validate
 
@@ -27,14 +29,14 @@ REPO_ROOT = Path(__file__).resolve().parents[2]
 MAX_RETRIES = 3
 
 
-def _extract_json(raw_result: str) -> dict | list:
+def _extract_json(raw_result: str) -> dict[str, Any] | list[dict[str, Any]]:
     """Model output should be pure JSON; tolerate a fenced code block and/or
     leading prose by locating the outermost {...} or [...] span."""
     text = raw_result.strip()
     if "```" in text:
         fenced = text.split("```")[1]
         if fenced.startswith("json"):
-            fenced = fenced[len("json"):]
+            fenced = fenced[len("json") :]
         text = fenced.strip()
 
     try:
@@ -54,7 +56,24 @@ def _extract_json(raw_result: str) -> dict | list:
     raise ValueError(f"could not extract JSON from model output: {raw_result!r}")
 
 
-def schema_extract(conn, state, context, raw_result) -> bool:
+def _extract_json_object(raw_result: str) -> dict[str, Any]:
+    """Like `_extract_json`, but for handlers whose prompt template always
+    asks for a single JSON object (rule_compile, fixture_generate) rather
+    than an array."""
+    parsed = _extract_json(raw_result)
+    if not isinstance(parsed, dict):
+        raise ValueError(
+            f"expected a JSON object, got {type(parsed).__name__}: {parsed!r}"
+        )
+    return parsed
+
+
+def schema_extract(
+    conn: sqlite3.Connection,
+    state: dict[str, Any],
+    context: dict[str, Any],
+    raw_result: str,
+) -> bool:
     hypotheses = _extract_json(raw_result)
     if isinstance(hypotheses, dict):
         hypotheses = [hypotheses]
@@ -80,8 +99,13 @@ def schema_extract(conn, state, context, raw_result) -> bool:
     return True
 
 
-def rule_compile(conn, state, context, raw_result) -> bool:
-    parsed = _extract_json(raw_result)
+def rule_compile(
+    conn: sqlite3.Connection,
+    state: dict[str, Any],
+    context: dict[str, Any],
+    raw_result: str,
+) -> bool:
+    parsed = _extract_json_object(raw_result)
     check_id = parsed["check_id"]
     rule_path = parsed["rule_path"]
 
@@ -108,8 +132,13 @@ def rule_compile(conn, state, context, raw_result) -> bool:
     return True
 
 
-def fixture_generate(conn, state, context, raw_result) -> bool:
-    parsed = _extract_json(raw_result)
+def fixture_generate(
+    conn: sqlite3.Connection,
+    state: dict[str, Any],
+    context: dict[str, Any],
+    raw_result: str,
+) -> bool:
+    parsed = _extract_json_object(raw_result)
     check_id = parsed["check_id"]
     fixture_dir = REPO_ROOT / parsed["fixture_dir"]
     fixture_dir.mkdir(parents=True, exist_ok=True)
@@ -125,13 +154,23 @@ def fixture_generate(conn, state, context, raw_result) -> bool:
         conn.execute(
             "UPDATE fixtures SET fixture_path = ?, ground_truth_method = ?, ground_truth_ref = ? "
             "WHERE id = ?",
-            (parsed["fixture_dir"], parsed["ground_truth_method"], parsed.get("ground_truth_ref"), fixture_id),
+            (
+                parsed["fixture_dir"],
+                parsed["ground_truth_method"],
+                parsed.get("ground_truth_ref"),
+                fixture_id,
+            ),
         )
     else:
         cur = conn.execute(
             "INSERT INTO fixtures (check_id, fixture_path, ground_truth_method, ground_truth_ref) "
             "VALUES (?, ?, ?, ?)",
-            (check_id, parsed["fixture_dir"], parsed["ground_truth_method"], parsed.get("ground_truth_ref")),
+            (
+                check_id,
+                parsed["fixture_dir"],
+                parsed["ground_truth_method"],
+                parsed.get("ground_truth_ref"),
+            ),
         )
         fixture_id = cur.lastrowid
     conn.commit()
@@ -140,7 +179,9 @@ def fixture_generate(conn, state, context, raw_result) -> bool:
     return True
 
 
-def fixture_validate(conn, state, context) -> bool:
+def fixture_validate(
+    conn: sqlite3.Connection, state: dict[str, Any], context: dict[str, Any]
+) -> bool:
     """Deterministic adapter state: no LLM. Compiles both fixtures to JSON
     and runs the Rego adapter against each, writing two `runs` rows."""
     check_id = context["check_id"]
@@ -168,7 +209,9 @@ def fixture_validate(conn, state, context) -> bool:
                 "raw_output": str(exc),
             }
         else:
-            result = rego_validate.validate(json_path, policy_dir, expected_verdict, check_id)
+            result = rego_validate.validate(
+                json_path, policy_dir, expected_verdict, check_id
+            )
 
         conn.execute(
             """INSERT INTO runs
@@ -188,7 +231,9 @@ def fixture_validate(conn, state, context) -> bool:
     return True
 
 
-def gate(conn, state, context) -> bool:
+def gate(
+    conn: sqlite3.Connection, state: dict[str, Any], context: dict[str, Any]
+) -> bool:
     """Pure logic, no LLM/adapter call: evaluate the latest two `runs` rows
     for the current check_id.
 
@@ -204,7 +249,9 @@ def gate(conn, state, context) -> bool:
     all_passed = len(runs) == 2 and all(r["passed"] for r in runs)
 
     if all_passed:
-        conn.execute("UPDATE rules SET status = 'validated' WHERE check_id = ?", (check_id,))
+        conn.execute(
+            "UPDATE rules SET status = 'validated' WHERE check_id = ?", (check_id,)
+        )
         conn.commit()
         return True
 

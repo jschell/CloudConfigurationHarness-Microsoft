@@ -45,9 +45,13 @@ def _load_run(conn, run_id: int) -> dict[str, Any]:
     fixture = None
     runs = []
     if check_id:
-        rule_row = conn.execute("SELECT * FROM rules WHERE check_id = ?", (check_id,)).fetchone()
+        rule_row = conn.execute(
+            "SELECT * FROM rules WHERE check_id = ?", (check_id,)
+        ).fetchone()
         rule = dict(rule_row) if rule_row else None
-        fixture_row = conn.execute("SELECT * FROM fixtures WHERE check_id = ?", (check_id,)).fetchone()
+        fixture_row = conn.execute(
+            "SELECT * FROM fixtures WHERE check_id = ?", (check_id,)
+        ).fetchone()
         fixture = dict(fixture_row) if fixture_row else None
         runs = [
             dict(r)
@@ -84,7 +88,12 @@ def _rego_diff(rule_a: dict | None, rule_b: dict | None) -> str:
     text_a = path_a.read_text().splitlines(keepends=True)
     text_b = path_b.read_text().splitlines(keepends=True)
     diff = list(
-        difflib.unified_diff(text_a, text_b, fromfile=str(rule_a["rule_path"]), tofile=str(rule_b["rule_path"]))
+        difflib.unified_diff(
+            text_a,
+            text_b,
+            fromfile=str(rule_a["rule_path"]),
+            tofile=str(rule_b["rule_path"]),
+        )
     )
     return "".join(diff) if diff else "(rule content is identical)"
 
@@ -95,7 +104,9 @@ def _adapter_summary(runs: list[dict]) -> str:
     lines = []
     for r in runs:
         mark = "PASS" if r["passed"] else "FAIL"
-        lines.append(f"  [{mark}] {r['adapter']} expected={r['expected_verdict']} actual={r['actual_verdict']}")
+        lines.append(
+            f"  [{mark}] {r['adapter']} expected={r['expected_verdict']} actual={r['actual_verdict']}"
+        )
     return "\n".join(lines)
 
 
@@ -106,10 +117,16 @@ def compare(run_a: dict[str, Any], run_b: dict[str, Any]) -> str:
         models_used = {v["model"] for v in run["model_map"].values()}
         lines.append(f"## Run {label} (workflow_runs.id={run['run_id']})")
         lines.append(f"- workflow: {run['workflow_name']}")
-        lines.append(f"- status: {run['status']}  ({run['created_at']} -> {run['updated_at']})")
-        lines.append(f"- models used: {', '.join(sorted(models_used)) or '(none recorded)'}")
+        lines.append(
+            f"- status: {run['status']}  ({run['created_at']} -> {run['updated_at']})"
+        )
+        lines.append(
+            f"- models used: {', '.join(sorted(models_used)) or '(none recorded)'}"
+        )
         lines.append(f"- check_id: {run['check_id'] or '(none produced)'}")
-        lines.append(f"- rule status: {run['rule']['status'] if run['rule'] else '(no rule)'}")
+        lines.append(
+            f"- rule status: {run['rule']['status'] if run['rule'] else '(no rule)'}"
+        )
         lines.append(f"- retries before terminal state: {run['retries']}")
         if run["last_failure_reason"]:
             lines.append(f"- last failure reason: {run['last_failure_reason']}")
@@ -121,7 +138,9 @@ def compare(run_a: dict[str, Any], run_b: dict[str, Any]) -> str:
     a_ok = run_a["rule"]["status"] == "validated" if run_a["rule"] else False
     b_ok = run_b["rule"]["status"] == "validated" if run_b["rule"] else False
     if a_ok == b_ok:
-        lines.append(f"Both runs reached the same outcome: {'validated' if a_ok else 'not validated'}.")
+        lines.append(
+            f"Both runs reached the same outcome: {'validated' if a_ok else 'not validated'}."
+        )
     else:
         lines.append(
             f"DISAGREEMENT: run A {'validated' if a_ok else 'did not validate'}, "
@@ -138,12 +157,19 @@ def compare(run_a: dict[str, Any], run_b: dict[str, Any]) -> str:
 
 
 def main() -> int:
-    parser = argparse.ArgumentParser(description="Compare two workflow_runs (A/B model comparison).")
+    parser = argparse.ArgumentParser(
+        description="Compare two workflow_runs (A/B model comparison)."
+    )
     parser.add_argument("--run-a", type=int, required=True)
     parser.add_argument("--run-b", type=int, required=True)
     parser.add_argument("--db-a", type=Path, default=None)
     parser.add_argument("--db-b", type=Path, default=None)
-    parser.add_argument("--out", type=Path, default=None, help="write report to this file instead of stdout")
+    parser.add_argument(
+        "--out",
+        type=Path,
+        default=None,
+        help="write report to this file instead of stdout",
+    )
     args = parser.parse_args()
 
     conn_a = connect(args.db_a) if args.db_a else connect()
