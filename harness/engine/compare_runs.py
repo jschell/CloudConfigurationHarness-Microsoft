@@ -12,6 +12,14 @@ Each workflow_runs row's context_json carries a `_model_map` (state name ->
 script can attribute results to a model without needing roles.yaml to have
 stayed unchanged between the two runs.
 
+Rule/fixture content comes from `rule_history`/`fixture_history` (append-only,
+tagged with workflow_run_id -- see schema.sql), not the live `rules`/
+`fixtures` rows or files on disk. Those are mutable single-row-per-check_id,
+so if two runs are A/B'd against the same check_id (the common case here --
+same hypothesis, two models), whichever ran last overwrites the other; the
+history tables are what let this script recover exactly what each run
+actually produced regardless of what a later run did to the same check_id.
+
 Usage:
     python -m harness.engine.compare_runs --run-a 1 --run-b 2
     python -m harness.engine.compare_runs --run-a 1 --db-a a.db --run-b 1 --db-b b.db
@@ -27,8 +35,6 @@ from typing import Any
 
 from harness.journal.db import connect
 
-REPO_ROOT = Path(__file__).resolve().parents[2]
-
 
 class CompareError(RuntimeError):
     pass
@@ -41,25 +47,26 @@ def _load_run(conn, run_id: int) -> dict[str, Any]:
     context = json.loads(row["context_json"] or "{}")
     check_id = context.get("check_id")
 
-    rule = None
-    fixture = None
+    rule_history = None
+    fixture_history = None
     runs = []
     if check_id:
-        # rules/fixtures are keyed by check_id with no per-run history --
-        # if two workflow_runs share a check_id (e.g. A/B'ing the same
-        # hypothesis), these two queries return whichever run most
-        # recently wrote that row, not necessarily *this* run's own
-        # outcome. `runs` is append-only and timestamped, so it's scoped
-        # to this run's own [created_at, updated_at] window to avoid
-        # attributing another run's adapter verdicts to this one.
-        rule_row = conn.execute(
-            "SELECT * FROM rules WHERE check_id = ?", (check_id,)
+        rule_history_row = conn.execute(
+            "SELECT * FROM rule_history WHERE workflow_run_id = ? AND check_id = ? "
+            "ORDER BY id DESC LIMIT 1",
+            (run_id, check_id),
         ).fetchone()
-        rule = dict(rule_row) if rule_row else None
-        fixture_row = conn.execute(
-            "SELECT * FROM fixtures WHERE check_id = ?", (check_id,)
+        rule_history = dict(rule_history_row) if rule_history_row else None
+        fixture_history_row = conn.execute(
+            "SELECT * FROM fixture_history WHERE workflow_run_id = ? AND check_id = ? "
+            "ORDER BY id DESC LIMIT 1",
+            (run_id, check_id),
         ).fetchone()
-        fixture = dict(fixture_row) if fixture_row else None
+        fixture_history = dict(fixture_history_row) if fixture_history_row else None
+        # `runs` is append-only and timestamped (no workflow_run_id column,
+        # predates it), so it's scoped to this run's own
+        # [created_at, updated_at] window to avoid attributing another
+        # run's adapter verdicts to this one when check_ids collide.
         runs = [
             dict(r)
             for r in conn.execute(
@@ -68,6 +75,8 @@ def _load_run(conn, run_id: int) -> dict[str, Any]:
                 (check_id, row["created_at"], row["updated_at"]),
             ).fetchall()
         ]
+
+    validated = len(runs) == 2 and all(r["passed"] for r in runs)
 
     return {
         "run_id": run_id,
@@ -79,29 +88,24 @@ def _load_run(conn, run_id: int) -> dict[str, Any]:
         "model_map": context.get("_model_map", {}),
         "retries": context.get("retries", {}).get(check_id, 0) if check_id else 0,
         "last_failure_reason": context.get("last_failure_reason"),
-        "rule": rule,
-        "fixture": fixture,
+        "rule_history": rule_history,
+        "fixture_history": fixture_history,
         "runs": runs,
+        "validated": validated,
     }
 
 
 def _rego_diff(rule_a: dict | None, rule_b: dict | None) -> str:
     if not rule_a or not rule_b:
         return "(one or both runs produced no rule -- nothing to diff)"
-    path_a = REPO_ROOT / rule_a["rule_path"]
-    path_b = REPO_ROOT / rule_b["rule_path"]
-    if not path_a.exists() or not path_b.exists():
-        return "(rule file missing on disk -- nothing to diff)"
-    if path_a == path_b:
-        return "(both runs wrote the same rule_path -- run B overwrote run A's file; diff not meaningful, compare journal history instead)"
-    text_a = path_a.read_text().splitlines(keepends=True)
-    text_b = path_b.read_text().splitlines(keepends=True)
+    text_a = rule_a["rego_content"].splitlines(keepends=True)
+    text_b = rule_b["rego_content"].splitlines(keepends=True)
     diff = list(
         difflib.unified_diff(
             text_a,
             text_b,
-            fromfile=str(rule_a["rule_path"]),
-            tofile=str(rule_b["rule_path"]),
+            fromfile=f"run A: {rule_a['rule_path']}",
+            tofile=f"run B: {rule_b['rule_path']}",
         )
     )
     return "".join(diff) if diff else "(rule content is identical)"
@@ -122,15 +126,6 @@ def _adapter_summary(runs: list[dict]) -> str:
 def compare(run_a: dict[str, Any], run_b: dict[str, Any]) -> str:
     lines = ["# A/B run comparison", ""]
 
-    if run_a["check_id"] and run_a["check_id"] == run_b["check_id"]:
-        lines.append(
-            f"Note: both runs share check_id {run_a['check_id']!r} -- rule/fixture "
-            "status below reflects whichever run most recently wrote that row "
-            "(no per-run history for those tables), not necessarily this run's "
-            "own outcome. Adapter verdicts are correctly scoped per run."
-        )
-        lines.append("")
-
     for label, run in (("A", run_a), ("B", run_b)):
         models_used = {v["model"] for v in run["model_map"].values()}
         lines.append(f"## Run {label} (workflow_runs.id={run['run_id']})")
@@ -142,9 +137,7 @@ def compare(run_a: dict[str, Any], run_b: dict[str, Any]) -> str:
             f"- models used: {', '.join(sorted(models_used)) or '(none recorded)'}"
         )
         lines.append(f"- check_id: {run['check_id'] or '(none produced)'}")
-        lines.append(
-            f"- rule status: {run['rule']['status'] if run['rule'] else '(no rule)'}"
-        )
+        lines.append(f"- validated (this run's own adapter checks): {run['validated']}")
         lines.append(f"- retries before terminal state: {run['retries']}")
         if run["last_failure_reason"]:
             lines.append(f"- last failure reason: {run['last_failure_reason']}")
@@ -153,8 +146,7 @@ def compare(run_a: dict[str, Any], run_b: dict[str, Any]) -> str:
         lines.append("")
 
     lines.append("## Verdict agreement")
-    a_ok = run_a["rule"]["status"] == "validated" if run_a["rule"] else False
-    b_ok = run_b["rule"]["status"] == "validated" if run_b["rule"] else False
+    a_ok, b_ok = run_a["validated"], run_b["validated"]
     if a_ok == b_ok:
         lines.append(
             f"Both runs reached the same outcome: {'validated' if a_ok else 'not validated'}."
@@ -168,7 +160,7 @@ def compare(run_a: dict[str, Any], run_b: dict[str, Any]) -> str:
 
     lines.append("## Rego rule diff (A -> B)")
     lines.append("```diff")
-    lines.append(_rego_diff(run_a["rule"], run_b["rule"]))
+    lines.append(_rego_diff(run_a["rule_history"], run_b["rule_history"]))
     lines.append("```")
 
     return "\n".join(lines)

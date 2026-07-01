@@ -1,4 +1,4 @@
-package main
+package checks.az_stor_001
 
 deny contains msg if {
 	some resource in input.resources

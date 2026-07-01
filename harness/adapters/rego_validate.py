@@ -6,6 +6,17 @@ evaluates JSON, not Bicep, so fixtures are validated as their compiled
 ARM-export-shaped JSON (see bicep_validate.bicep_to_json for the
 conversion step).
 
+Every check's .rego file must declare its own package -- see
+`namespace_for_check_id()` -- rather than sharing `package main`.
+`--policy <dir>` loads every .rego file in the directory, and conftest's
+default behavior evaluates the merged `deny`/`violation` set for whatever
+namespace(s) it's told to test; if every check shared `package main`,
+testing one check's fixture would also evaluate every *other* check's
+deny rules against it, so adding a new check could silently break an
+older, already-validated one's fixtures (this actually happened: see the
+2026-07-01 status doc, Session 5). Each check gets an isolated namespace
+instead, via `-n <namespace>`, so checks can never cross-contaminate.
+
 Interface (shared with bicep_validate.py):
     Input: fixture JSON file path, expected verdict ("pass" | "fail")
     Output: dict matching the `runs` table shape:
@@ -26,6 +37,14 @@ from pathlib import Path
 ADAPTER_NAME = "rego_validate"
 
 
+def namespace_for_check_id(check_id: str) -> str:
+    """The Rego package/conftest namespace a check's rule must declare,
+    e.g. "AZ-STOR-001" -> "checks.az_stor_001". Keeping this in one place
+    (rather than each generated rule inventing its own) is what makes
+    namespace isolation between checks actually hold."""
+    return "checks." + check_id.lower().replace("-", "_")
+
+
 def validate(
     fixture_json_path: str | Path,
     policy_dir: str | Path,
@@ -40,6 +59,8 @@ def validate(
             str(fixture_json_path),
             "--policy",
             str(policy_dir),
+            "--namespace",
+            namespace_for_check_id(check_id),
             "--output",
             "json",
         ],

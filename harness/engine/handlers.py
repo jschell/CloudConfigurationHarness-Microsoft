@@ -127,6 +127,14 @@ def rule_compile(
             "VALUES (?, ?, ?, 'draft')",
             (parsed["hypothesis_id"], check_id, rule_path),
         )
+    # Append-only, unlike the `rules` row above -- see schema.sql. Lets
+    # compare_runs.py recover exactly what *this* run produced even if a
+    # later run targeting the same check_id overwrites `rules`/the file.
+    conn.execute(
+        "INSERT INTO rule_history (workflow_run_id, check_id, rule_path, rego_content) "
+        "VALUES (?, ?, ?, ?)",
+        (context.get("_workflow_run_id"), check_id, rule_path, parsed["rego_content"]),
+    )
     conn.commit()
     context["check_id"] = check_id
     return True
@@ -173,6 +181,22 @@ def fixture_generate(
             ),
         )
         fixture_id = cur.lastrowid
+    # Append-only, unlike the `fixtures` row above -- see schema.sql and
+    # the matching note in rule_compile().
+    conn.execute(
+        "INSERT INTO fixture_history "
+        "(workflow_run_id, check_id, fixture_path, vulnerable_bicep, safe_bicep, "
+        "ground_truth_method, ground_truth_ref) VALUES (?, ?, ?, ?, ?, ?, ?)",
+        (
+            context.get("_workflow_run_id"),
+            check_id,
+            parsed["fixture_dir"],
+            parsed["vulnerable_bicep"],
+            parsed["safe_bicep"],
+            parsed["ground_truth_method"],
+            parsed.get("ground_truth_ref"),
+        ),
+    )
     conn.commit()
     context["check_id"] = check_id
     context["fixture_id"] = fixture_id

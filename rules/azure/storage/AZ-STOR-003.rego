@@ -1,4 +1,4 @@
-package main
+package checks.az_stor_003
 
 import rego.v1
 

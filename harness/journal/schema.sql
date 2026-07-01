@@ -54,6 +54,39 @@ CREATE TABLE IF NOT EXISTS findings (
   evaluated_at TEXT NOT NULL DEFAULT (datetime('now'))
 );
 
+-- Added after Task 7: `rules`/`fixtures` above are current-state-only
+-- (one mutable row per check_id) -- fine for the retry-until-validated
+-- loop they were designed for, but it means whichever workflow_run last
+-- wrote a check_id silently overwrites any earlier run's content, with no
+-- way to recover what an earlier run actually produced. That broke
+-- compare_runs.py for two runs A/B'd against the same check_id (rego
+-- diff had nothing to diff once B overwrote A). These two tables are
+-- append-only, one row per write, so every run's actual content survives
+-- regardless of what a later run does to the same check_id -- this is
+-- the "journal tracks provenance and run history" half of the plan's
+-- journal/git split (docs/plans/multi-model-config-discovery.md), which
+-- `rules`/`fixtures` alone didn't fully deliver.
+CREATE TABLE IF NOT EXISTS rule_history (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  workflow_run_id INTEGER REFERENCES workflow_runs(id),
+  check_id TEXT NOT NULL,
+  rule_path TEXT NOT NULL,
+  rego_content TEXT NOT NULL,
+  created_at TEXT NOT NULL DEFAULT (datetime('now'))
+);
+
+CREATE TABLE IF NOT EXISTS fixture_history (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  workflow_run_id INTEGER REFERENCES workflow_runs(id),
+  check_id TEXT NOT NULL,
+  fixture_path TEXT NOT NULL,
+  vulnerable_bicep TEXT NOT NULL,
+  safe_bicep TEXT NOT NULL,
+  ground_truth_method TEXT,
+  ground_truth_ref TEXT,
+  created_at TEXT NOT NULL DEFAULT (datetime('now'))
+);
+
 -- Added during Task 3 (runner skeleton): tracks in-flight/completed FSM runs
 -- so a crashed run can resume from its last completed state.
 CREATE TABLE IF NOT EXISTS workflow_runs (

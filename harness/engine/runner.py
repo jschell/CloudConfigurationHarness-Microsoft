@@ -248,6 +248,9 @@ class Runner:
 
         state_name = row["current_state"]
         context = json.loads(row["context_json"] or "{}")
+        # Handlers that write rule_history/fixture_history need to know
+        # which run they're attributing content to (see schema.sql).
+        context["_workflow_run_id"] = run_id
 
         while state_name != "end":
             state = _state_by_name(workflow, state_name)
