@@ -18,6 +18,9 @@ Workflow YAML contract (one file per workflow under harness/workflows/):
         read_files: [repo-relative paths whose content is added to the
                      prompt context under "_files"] (LLM states only, optional)
         handler: "harness.engine.handlers.<function>" (optional)
+        requires: [preflight.py requirement names, e.g. az, conftest]
+                  (adapter states only, optional; checked before the handler
+                  runs -- see harness/engine/preflight.py)
         next_on_success: state name or 'end'
         next_on_failure: state name or 'end'
 
@@ -53,6 +56,7 @@ import yaml
 sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 
 from harness.journal.db import connect  # noqa: E402
+from harness.engine import preflight  # noqa: E402
 
 ENGINE_DIR = Path(__file__).parent
 ROLES_PATH = ENGINE_DIR / "roles.yaml"
@@ -125,6 +129,8 @@ def _invoke_claude(role_name: str, roles: dict, prompt: str) -> str:
     model's raw text result (state-specific JSON parsing happens by the
     caller)."""
     role = roles[role_name]
+    if role.get("endpoint") == "zai":
+        preflight.require(["zai_key"])
     env = os.environ.copy()
     env.update(role.get("env", {}))
     env_file_values = load_env_file()
@@ -139,13 +145,20 @@ def _invoke_claude(role_name: str, roles: dict, prompt: str) -> str:
         text=True,
         timeout=300,
     )
-    if result.returncode != 0:
+    try:
+        outer = json.loads(result.stdout)
+    except json.JSONDecodeError:
+        if result.returncode != 0:
+            raise WorkflowError(
+                f"claude invocation failed for role={role_name}: {result.stderr or result.stdout}"
+            )
         raise WorkflowError(
-            f"claude invocation failed for role={role_name}: {result.stderr}"
+            f"claude produced non-JSON output for role={role_name}: {result.stdout!r}"
         )
-    outer = json.loads(result.stdout)
     if outer.get("is_error"):
-        raise WorkflowError(f"claude reported an error for role={role_name}: {outer}")
+        raise WorkflowError(
+            f"claude reported an error for role={role_name}: {outer.get('result', outer)}"
+        )
     return outer["result"]
 
 
@@ -165,9 +178,14 @@ def _resolve_handler(dotted_path: str):
 
 
 class Runner:
-    def __init__(self, db_path=None):
+    def __init__(self, db_path=None, role_override: dict[str, str] | None = None):
+        """role_override remaps a workflow-declared role name to a different
+        entry in roles.yaml at dispatch time, e.g. {"executor_claude":
+        "executor_glm"} to A/B the same workflow against a different model
+        without editing the workflow YAML (see compare_runs.py)."""
         self.conn = connect(db_path) if db_path else connect()
         self.roles = load_roles()
+        self.role_override = role_override or {}
 
     def start(
         self,
@@ -177,10 +195,27 @@ class Runner:
     ) -> int:
         workflow = load_workflow(workflow_path)
         first_state = start_state or workflow["states"][0]["name"]
+
+        # Record which model actually backed each role for this run (after
+        # role_override is applied) so compare_runs.py can attribute results
+        # to a model without depending on roles.yaml having stayed the same.
+        model_map = {}
+        for wf_state in workflow["states"]:
+            if "role" in wf_state:
+                resolved_role = self.role_override.get(wf_state["role"], wf_state["role"])
+                model_map[wf_state["name"]] = {
+                    "declared_role": wf_state["role"],
+                    "resolved_role": resolved_role,
+                    "model": self.roles[resolved_role]["model"],
+                }
+        initial_context = dict(initial_context or {})
+        initial_context["_model_map"] = model_map
+        initial_context["_role_override"] = self.role_override
+
         cur = self.conn.execute(
             "INSERT INTO workflow_runs (workflow_name, workflow_path, current_state, status, context_json) "
             "VALUES (?, ?, ?, 'running', ?)",
-            (workflow["workflow"], str(workflow_path), first_state, json.dumps(initial_context or {})),
+            (workflow["workflow"], str(workflow_path), first_state, json.dumps(initial_context)),
         )
         self.conn.commit()
         run_id = cur.lastrowid
@@ -243,8 +278,9 @@ class Runner:
         prompt_template = REPO_ROOT / state["prompt_template"]
         prompt = _render_prompt(prompt_template, journal_context)
 
-        raw_result = _invoke_claude(state["role"], self.roles, prompt)
-        print(f"[runner] state '{state['name']}' model output: {raw_result}")
+        role_name = self.role_override.get(state["role"], state["role"])
+        raw_result = _invoke_claude(role_name, self.roles, prompt)
+        print(f"[runner] state '{state['name']}' role '{state['role']}' -> '{role_name}' model output: {raw_result}")
         context[f"last_output::{state['name']}"] = raw_result
 
         if "handler" in state:
@@ -253,6 +289,8 @@ class Runner:
         return True
 
     def _execute_adapter_state(self, state: dict[str, Any], context: dict[str, Any]) -> bool:
+        if state.get("requires"):
+            preflight.require(state["requires"])
         handler = _resolve_handler(state["handler"])
         return handler(self.conn, state, context)
 
@@ -272,9 +310,18 @@ def main():
     parser.add_argument(
         "--context", type=str, default=None, help="JSON object seeding the initial run context"
     )
+    parser.add_argument(
+        "--role-override",
+        type=str,
+        action="append",
+        default=[],
+        help="workflow_role=roles_yaml_role, e.g. executor_claude=executor_glm "
+        "(repeatable; see compare_runs.py for A/B runs)",
+    )
     args = parser.parse_args()
 
-    runner = Runner(db_path=args.db)
+    role_override = dict(pair.split("=", 1) for pair in args.role_override)
+    runner = Runner(db_path=args.db, role_override=role_override)
     if args.resume:
         run_id = runner.resume(args.resume, args.workflow)
     else:

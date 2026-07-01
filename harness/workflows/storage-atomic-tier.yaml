@@ -40,6 +40,7 @@ states:
     type: adapter
     reads: [rules, fixtures]
     writes: [runs]
+    requires: [az, conftest]
     handler: harness.engine.handlers.fixture_validate
     next_on_success: gate
     next_on_failure: gate
