@@ -15,6 +15,9 @@ Workflow YAML contract (one file per workflow under harness/workflows/):
         reads: [journal table names this state queries]
         writes: [journal table names this state inserts/updates]
         prompt_template: path to a .md file (LLM states only)
+        read_files: [repo-relative paths whose content is added to the
+                     prompt context under "_files"] (LLM states only, optional)
+        handler: "harness.engine.handlers.<function>" (optional)
         next_on_success: state name or 'end'
         next_on_failure: state name or 'end'
 
@@ -22,6 +25,12 @@ Workflow YAML contract (one file per workflow under harness/workflows/):
 role (executed by this runner via the Claude Code CLI) or is a deterministic
 state (`adapter`/`gate`) whose behavior is implemented directly by the
 runner/adapters, never by a model.
+
+`handler` names a function in harness.engine.handlers that does the actual
+journal/file writes for a state (parsing model output for LLM states,
+running adapters for `adapter` states, evaluating pass/fail for `gate`
+states). Without a handler, an LLM state just logs its output (see the
+smoke test) and always succeeds; adapter/gate states require a handler.
 
 Guardrail: `orchestrator`-role states may only declare `reads` against
 hypotheses, rules, and runs -- never fixtures -- so raw fixture/source
@@ -31,6 +40,7 @@ content is never placed in the orchestrator's context.
 from __future__ import annotations
 
 import argparse
+import importlib
 import json
 import os
 import subprocess
@@ -144,18 +154,33 @@ def _render_prompt(template_path: Path, context: dict[str, Any]) -> str:
     return template + "\n\n## Journal context\n\n" + json.dumps(context, indent=2)
 
 
+def _read_files(paths: list[str]) -> dict[str, str]:
+    return {path: (REPO_ROOT / path).read_text() for path in paths}
+
+
+def _resolve_handler(dotted_path: str):
+    module_path, _, func_name = dotted_path.rpartition(".")
+    module = importlib.import_module(module_path)
+    return getattr(module, func_name)
+
+
 class Runner:
     def __init__(self, db_path=None):
         self.conn = connect(db_path) if db_path else connect()
         self.roles = load_roles()
 
-    def start(self, workflow_path: Path) -> int:
+    def start(
+        self,
+        workflow_path: Path,
+        start_state: str | None = None,
+        initial_context: dict[str, Any] | None = None,
+    ) -> int:
         workflow = load_workflow(workflow_path)
-        first_state = workflow["states"][0]["name"]
+        first_state = start_state or workflow["states"][0]["name"]
         cur = self.conn.execute(
             "INSERT INTO workflow_runs (workflow_name, workflow_path, current_state, status, context_json) "
-            "VALUES (?, ?, ?, 'running', '{}')",
-            (workflow["workflow"], str(workflow_path), first_state),
+            "VALUES (?, ?, ?, 'running', ?)",
+            (workflow["workflow"], str(workflow_path), first_state, json.dumps(initial_context or {})),
         )
         self.conn.commit()
         run_id = cur.lastrowid
@@ -213,23 +238,27 @@ class Runner:
     def _execute_llm_state(self, state: dict[str, Any], context: dict[str, Any]) -> bool:
         journal_context = _read_tables(self.conn, state.get("reads", []))
         journal_context["_run_context"] = context
+        if state.get("read_files"):
+            journal_context["_files"] = _read_files(state["read_files"])
         prompt_template = REPO_ROOT / state["prompt_template"]
         prompt = _render_prompt(prompt_template, journal_context)
 
         raw_result = _invoke_claude(state["role"], self.roles, prompt)
         print(f"[runner] state '{state['name']}' model output: {raw_result}")
         context[f"last_output::{state['name']}"] = raw_result
+
+        if "handler" in state:
+            handler = _resolve_handler(state["handler"])
+            return handler(self.conn, state, context, raw_result)
         return True
 
     def _execute_adapter_state(self, state: dict[str, Any], context: dict[str, Any]) -> bool:
-        raise NotImplementedError(
-            "adapter states are wired up per-workflow; see harness/workflows/storage-atomic-tier.yaml"
-        )
+        handler = _resolve_handler(state["handler"])
+        return handler(self.conn, state, context)
 
     def _execute_gate_state(self, state: dict[str, Any], context: dict[str, Any]) -> bool:
-        raise NotImplementedError(
-            "gate states are wired up per-workflow; see harness/workflows/storage-atomic-tier.yaml"
-        )
+        handler = _resolve_handler(state["handler"])
+        return handler(self.conn, state, context)
 
 
 def main():
@@ -237,13 +266,20 @@ def main():
     parser.add_argument("workflow", type=Path, help="path to workflow YAML")
     parser.add_argument("--resume", type=int, help="workflow_runs.id to resume")
     parser.add_argument("--db", type=Path, default=None)
+    parser.add_argument(
+        "--start-state", type=str, default=None, help="state name to start at (default: first state)"
+    )
+    parser.add_argument(
+        "--context", type=str, default=None, help="JSON object seeding the initial run context"
+    )
     args = parser.parse_args()
 
     runner = Runner(db_path=args.db)
     if args.resume:
         run_id = runner.resume(args.resume, args.workflow)
     else:
-        run_id = runner.start(args.workflow)
+        initial_context = json.loads(args.context) if args.context else None
+        run_id = runner.start(args.workflow, start_state=args.start_state, initial_context=initial_context)
     print(f"[runner] finished workflow_runs.id={run_id}")
 
 

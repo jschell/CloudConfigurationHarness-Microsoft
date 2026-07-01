@@ -1,0 +1,53 @@
+# Tier-1 (atomic-check) FSM for Azure Storage account configuration hypotheses.
+# schema_extract -> rule_compile -> fixture_generate -> fixture_validate -> gate
+#
+# gate's next_on_success/next_on_failure are reinterpreted for a pure-logic
+# state (see harness/engine/handlers.py:gate): "success" means the check
+# reached a terminal rules.status (validated or rejected after 3 retries),
+# "failure" means retries remain and the loop returns to rule_compile with
+# the failure reason appended to context.
+workflow: storage-atomic-tier
+states:
+  - name: schema_extract
+    role: orchestrator
+    reads: [hypotheses]
+    writes: [hypotheses]
+    read_files: [sources/azure/storage/swagger-refs.md]
+    prompt_template: harness/workflows/prompts/schema_extract.md
+    handler: harness.engine.handlers.schema_extract
+    next_on_success: rule_compile
+    next_on_failure: end
+
+  - name: rule_compile
+    role: executor_claude
+    reads: [hypotheses]
+    writes: [rules]
+    prompt_template: harness/workflows/prompts/rule_compile.md
+    handler: harness.engine.handlers.rule_compile
+    next_on_success: fixture_generate
+    next_on_failure: end
+
+  - name: fixture_generate
+    role: executor_claude
+    reads: [rules]
+    writes: [fixtures]
+    prompt_template: harness/workflows/prompts/fixture_generate.md
+    handler: harness.engine.handlers.fixture_generate
+    next_on_success: fixture_validate
+    next_on_failure: end
+
+  - name: fixture_validate
+    type: adapter
+    reads: [rules, fixtures]
+    writes: [runs]
+    handler: harness.engine.handlers.fixture_validate
+    next_on_success: gate
+    next_on_failure: gate
+
+  - name: gate
+    type: gate
+    reads: [runs, rules]
+    writes: [rules]
+    handler: harness.engine.handlers.gate
+    next_on_success: end
+    next_on_failure: rule_compile
