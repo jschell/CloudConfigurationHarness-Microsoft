@@ -15,6 +15,7 @@ import rego.v1
 # whenever a property has more than one bad value (TLS1_3 is listed in
 # the swagger enum but documented as "not supported" for this property,
 # so treating it as risky alongside TLS1_0/TLS1_1 is correct too).
+# See docs/patterns/rego-rule-authoring.md for the general pattern.
 #
 # Input is the compiled ARM template produced by `az bicep build`:
 # a top-level object with a `resources` array.

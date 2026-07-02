@@ -13,14 +13,24 @@ each prompt template must produce):
                         schema_coverage below), one per property in the
                         enumerated property list the prompt was given --
                         NOT just the security-relevant ones.
-    rule_compile    -> {"hypothesis_id", "check_id", "rule_path", "rego_content"}
-    fixture_generate-> {"check_id", "fixture_dir", "vulnerable_bicep",
-                         "safe_bicep", "ground_truth_method", "ground_truth_ref"}
+    rule_compile    -> {"hypothesis_id", "rego_content"}
+    fixture_generate-> {"vulnerable_bicep", "safe_bicep",
+                         "ground_truth_method", "ground_truth_ref"}
+
+check_id/rule_path/fixture_dir are deliberately NOT part of either
+output schema and are never read from the model even if present --
+see docs/patterns/deterministic-check-id-assignment.md. The model has
+no reliable way to know which check_id numbers are already taken (each
+call is a stateless CLI invocation with no memory of prior calls), and
+letting it invent one caused a real check_id collision that silently
+overwrote three already-validated rules before being caught (2026-07-02).
+`_check_id_for_hypothesis` assigns it deterministically instead.
 """
 
 from __future__ import annotations
 
 import json
+import re
 import sqlite3
 from pathlib import Path
 from typing import Any
@@ -28,6 +38,7 @@ from typing import Any
 from harness.adapters import bicep_validate, rego_validate
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
+CHECK_ID_PREFIX = "AZ-STOR"  # this workflow/handlers module is Storage-specific
 MAX_RETRIES = 3
 
 
@@ -149,6 +160,33 @@ def schema_extract(
     return True
 
 
+def _check_id_for_hypothesis(
+    conn: sqlite3.Connection, hypothesis_id: int
+) -> tuple[str, bool]:
+    """Deterministically assign a check_id -- the model is never asked to
+    invent one (see the module docstring). Returns (check_id, is_retry):
+    is_retry=True means `rules` already has a row for this hypothesis
+    (a gate-triggered rule_compile retry), so its existing check_id is
+    reused rather than minted fresh. Never reuses a number that appears
+    anywhere in `rules` OR `rule_history`, so a superseded/overwritten
+    check_id's number is never handed out again either.
+    """
+    existing = conn.execute(
+        "SELECT check_id FROM rules WHERE hypothesis_id = ?", (hypothesis_id,)
+    ).fetchone()
+    if existing:
+        return existing["check_id"], True
+
+    numbers = []
+    for table in ("rules", "rule_history"):
+        for row in conn.execute(f"SELECT DISTINCT check_id FROM {table}").fetchall():
+            match = re.search(r"(\d+)$", row["check_id"])
+            if match:
+                numbers.append(int(match.group(1)))
+    next_number = max(numbers, default=0) + 1
+    return f"{CHECK_ID_PREFIX}-{next_number:03d}", False
+
+
 def rule_compile(
     conn: sqlite3.Connection,
     state: dict[str, Any],
@@ -156,17 +194,27 @@ def rule_compile(
     raw_result: str,
 ) -> bool:
     parsed = _extract_json_object(raw_result)
-    check_id = parsed["check_id"]
-    rule_path = parsed["rule_path"]
+    hypothesis_id = parsed["hypothesis_id"]
+    check_id, is_retry = _check_id_for_hypothesis(conn, hypothesis_id)
+    rule_path = f"rules/azure/storage/{check_id}.rego"
+    namespace = "checks." + check_id.lower().replace("-", "_")
+    # The model can't know the correct package name in advance either
+    # (it doesn't know check_id), so it writes a placeholder and the
+    # handler substitutes the real one here -- same reasoning as check_id
+    # itself being handler-assigned, not model-assigned.
+    rego_content = re.sub(
+        r"^package\s+\S+",
+        f"package {namespace}",
+        parsed["rego_content"],
+        count=1,
+        flags=re.MULTILINE,
+    )
 
     full_path = REPO_ROOT / rule_path
     full_path.parent.mkdir(parents=True, exist_ok=True)
-    full_path.write_text(parsed["rego_content"])
+    full_path.write_text(rego_content)
 
-    existing = conn.execute(
-        "SELECT id FROM rules WHERE check_id = ?", (check_id,)
-    ).fetchone()
-    if existing:
+    if is_retry:
         conn.execute(
             "UPDATE rules SET rule_path = ?, status = 'draft' WHERE check_id = ?",
             (rule_path, check_id),
@@ -175,7 +223,7 @@ def rule_compile(
         conn.execute(
             "INSERT INTO rules (hypothesis_id, check_id, rule_path, status) "
             "VALUES (?, ?, ?, 'draft')",
-            (parsed["hypothesis_id"], check_id, rule_path),
+            (hypothesis_id, check_id, rule_path),
         )
     # Append-only, unlike the `rules` row above -- see schema.sql. Lets
     # compare_runs.py recover exactly what *this* run produced even if a
@@ -183,7 +231,7 @@ def rule_compile(
     conn.execute(
         "INSERT INTO rule_history (workflow_run_id, check_id, rule_path, rego_content) "
         "VALUES (?, ?, ?, ?)",
-        (context.get("_workflow_run_id"), check_id, rule_path, parsed["rego_content"]),
+        (context.get("_workflow_run_id"), check_id, rule_path, rego_content),
     )
     conn.commit()
     context["check_id"] = check_id
@@ -197,8 +245,12 @@ def fixture_generate(
     raw_result: str,
 ) -> bool:
     parsed = _extract_json_object(raw_result)
-    check_id = parsed["check_id"]
-    fixture_dir = REPO_ROOT / parsed["fixture_dir"]
+    # Authoritative: set by rule_compile earlier in this same run, not
+    # echoed back by the model (same reasoning as rule_compile's check_id
+    # -- see the module docstring and _check_id_for_hypothesis).
+    check_id = context["check_id"]
+    fixture_path = f"fixtures/azure/storage/{check_id}"
+    fixture_dir = REPO_ROOT / fixture_path
     fixture_dir.mkdir(parents=True, exist_ok=True)
 
     (fixture_dir / "vulnerable.bicep").write_text(parsed["vulnerable_bicep"])
@@ -213,7 +265,7 @@ def fixture_generate(
             "UPDATE fixtures SET fixture_path = ?, ground_truth_method = ?, ground_truth_ref = ? "
             "WHERE id = ?",
             (
-                parsed["fixture_dir"],
+                fixture_path,
                 parsed["ground_truth_method"],
                 parsed.get("ground_truth_ref"),
                 fixture_id,
@@ -225,7 +277,7 @@ def fixture_generate(
             "VALUES (?, ?, ?, ?)",
             (
                 check_id,
-                parsed["fixture_dir"],
+                fixture_path,
                 parsed["ground_truth_method"],
                 parsed.get("ground_truth_ref"),
             ),
@@ -240,7 +292,7 @@ def fixture_generate(
         (
             context.get("_workflow_run_id"),
             check_id,
-            parsed["fixture_dir"],
+            fixture_path,
             parsed["vulnerable_bicep"],
             parsed["safe_bicep"],
             parsed["ground_truth_method"],

@@ -24,7 +24,7 @@ states:
 
   - name: rule_compile
     role: executor_glm
-    reads: [hypotheses]
+    reads: [hypotheses, rules]
     writes: [rules]
     prompt_template: harness/workflows/prompts/rule_compile.md
     handler: harness.engine.handlers.rule_compile

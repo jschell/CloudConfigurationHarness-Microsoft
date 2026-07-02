@@ -12,16 +12,15 @@ The rule fires when the resource is in its risky configuration (per the
 hypothesis's `risky_value`) and does not fire when it is in its safe
 configuration (`safe_value`).
 
-The package MUST be `checks.<check_id lowercased, dashes to underscores>`
--- e.g. check_id `AZ-STOR-005` gets `package checks.az_stor_005` -- NOT
-`package main`. `--policy rules/azure/storage/` loads every check's
-.rego file at once; if two checks shared `package main`, testing one
-check's fixture would also evaluate every other check's `deny` rules
+Start the file with the literal line `package PLACEHOLDER` -- the harness
+replaces it with the correct `checks.<check_id>` namespace after you
+reply (you are not told the check_id in advance; see below for why). Do
+NOT use `package main`. `--policy rules/azure/storage/` loads every
+check's .rego file at once; if two checks shared one namespace, testing
+one check's fixture would also evaluate every other check's `deny` rules
 against it, and a new rule could silently break an older, already-
 validated check's fixtures. Each check gets its own package specifically
-to prevent that (`rego_validate.py` queries the matching namespace via
-`--namespace`, keyed off check_id, so this convention is load-bearing --
-don't deviate from it).
+to prevent that.
 
 The input document is the full compiled ARM template JSON produced by `az
 bicep build` -- a top-level object with a `resources` array, NOT a bare
@@ -45,17 +44,20 @@ other equally-bad values (e.g. `minimumTlsVersion`'s `TLS1_0` AND
 hypothetical: exactly that bug shipped in AZ-STOR-004 and was only
 caught by hand later. `== risky_value` is fine when the property is
 strictly binary (e.g. `networkAcls.defaultAction` only has `Allow`/
-`Deny`) since there's nothing else it could be.
+`Deny`) since there's nothing else it could be. Full writeup:
+`docs/patterns/rego-rule-authoring.md`.
 
-Pick a check_id of the form `AZ-STOR-NNN` (three digits, next unused
-number for this resource type) and a rule_path of
-`rules/azure/storage/<check_id>.rego`.
+Do NOT invent a check_id or rule_path yourself, and don't include them in
+your reply -- the harness assigns the check_id deterministically (see
+`docs/patterns/deterministic-check-id-assignment.md`). Each call to you is
+a stateless invocation with no memory of other calls, so you have no
+reliable way to know which numbers are already taken; a model-invented
+check_id previously collided with an already-validated check and silently
+overwrote it (2026-07-02) before this fix.
 
 Reply with ONLY a JSON object (no markdown fences, no prose):
 
     {
       "hypothesis_id": <id of the hypothesis row you compiled>,
-      "check_id": "AZ-STOR-NNN",
-      "rule_path": "rules/azure/storage/AZ-STOR-NNN.rego",
-      "rego_content": "<the full .rego file contents as a string>"
+      "rego_content": "<the full .rego file contents as a string, starting with 'package PLACEHOLDER'>"
     }

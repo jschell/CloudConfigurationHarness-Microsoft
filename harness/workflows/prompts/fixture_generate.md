@@ -20,11 +20,14 @@ Cite a `ground_truth_method` for why the vulnerable/safe labels are correct
 definition already flags this exact configuration, or "manual-expert" with
 your rationale in `ground_truth_ref` otherwise).
 
+Do not include check_id or fixture_dir in your reply -- the harness
+already knows which check this fixture pair belongs to (see
+`docs/patterns/deterministic-check-id-assignment.md`) and writes the
+files to the right place itself.
+
 Reply with ONLY a JSON object (no markdown fences, no prose):
 
     {
-      "check_id": "AZ-STOR-NNN",
-      "fixture_dir": "fixtures/azure/storage/AZ-STOR-NNN",
       "vulnerable_bicep": "<full .bicep file contents>",
       "safe_bicep": "<full .bicep file contents>",
       "ground_truth_method": "azure-policy-builtin | manual-expert | iam-simulator",
