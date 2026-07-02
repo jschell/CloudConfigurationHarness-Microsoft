@@ -7,18 +7,31 @@ values, from the original design:
 
 - **Tier 1 (atomic)** -- a single property on a single resource is
   risky or safe on its own (e.g. `networkAcls.defaultAction == "Allow"`).
-  **This is the only tier implemented.** Everything in this repo --
   `schema_extract`, `rule_compile`, `fixture_generate`, the whole
-  `storage-atomic-tier.yaml` FSM -- is Tier 1.
+  `storage-atomic-tier.yaml` FSM.
 - **Tier 2 (pattern)** -- a *combination* of properties on one resource
-  is risky even though no single property is, by itself. Not
-  implemented. `schema_coverage`'s classification only ever asks "is
-  this property risky by itself" -- a property correctly marked
-  not-relevant standalone could still be half of a real Tier-2 finding.
-  Every property's rationale is preserved regardless of verdict
-  (nothing is deleted when marked not-relevant), so a future Tier-2 pass
-  could re-scan the `schema_coverage` ledger without re-deriving
-  anything -- but no such pass exists yet.
+  is risky even though no single property is, by itself (e.g.
+  `allowSharedKeyAccess == true` combined with
+  `networkAcls.defaultAction == "Allow"`, proven live as `AZ-STOR-042`).
+  **Implemented** (see
+  `docs/plans/active/2026-07-02-tier-2-pattern-checks.md` for the
+  design): `pattern_extract` proposes a
+  handful of plausible combinations reasoning from known attack
+  patterns -- NOT an exhaustive sweep like Tier 1's `schema_coverage`
+  (even just pairs of Storage's ~72 writable properties is ~2,500
+  combinations, too many to classify one by one). A hypothesis's
+  `property_conditions` column (JSON list of
+  `{property_path, risky_value, safe_value}`) holds the combination;
+  `property_path`/`risky_value`/`safe_value` stay NULL/summary-only for
+  tier>=2 rows. `rule_compile`/`fixture_generate`/`fixture_validate`/
+  `gate` are unchanged code paths, generic across tiers: fixtures are
+  an N-variant list (`fixtures.variants_json`) instead of a fixed
+  vulnerable/safe pair, so a combination hypothesis can be proven with
+  an all-risky variant, an all-safe variant, and one "mixed" variant per
+  condition (only that one condition risky) showing the rule doesn't
+  fire on any single property in isolation. Tier 1 rows keep
+  `variants_json IS NULL` and fall back to the original two-variant
+  shape -- no existing rule/fixture changed behavior.
 - **Tier 3 (chained)** -- risk emerges from a relationship *across*
   resources (e.g. a storage account's network rules combined with a
   peered VNet's routing). Not implemented; not designed yet either. This
@@ -28,19 +41,26 @@ values, from the original design:
 If you're asked to add a "combination" or "cross-resource" check, that's
 new design work, not a parameter to flip on the existing pipeline.
 
-## The Tier 1 pipeline, end to end
+## The Tier 1 / Tier 2 pipeline, end to end
 
 ```
-schema_extract (LLM) -> hypotheses, schema_coverage
+schema_extract (LLM, Tier 1) or pattern_extract (LLM, Tier 2) -> hypotheses[, schema_coverage]
   -> rule_compile (LLM) -> rules (status=draft)
-  -> fixture_generate (LLM) -> fixtures
-  -> fixture_validate (deterministic: az bicep build + conftest) -> runs
+  -> fixture_generate (LLM) -> fixtures (N-variant list)
+  -> fixture_validate (deterministic: az bicep build + conftest) -> runs (one row per variant)
   -> gate (pure logic): pass -> rules (status=validated) / fail -> retry rule_compile (max 3x) -> rules (status=rejected)
 ```
 
+`rule_compile`/`fixture_generate`/`fixture_validate`/`gate` are the same
+code and the same handler functions for both tiers -- only the
+discovery state (`schema_extract` vs `pattern_extract`) and the prompt
+templates differ. Tier 1's `storage-atomic-tier.yaml` and Tier 2's
+`storage-pattern-tier.yaml` both wire up the shared four states, with
+`check_id_prefix` (`AZ-STOR` vs `AZ-STOR-PAT`) keeping the two numbering
+sequences distinct.
+
 Every state's `role`/`type`, `reads`/`writes`, and (for adapter states)
-`requires` are declared in the workflow YAML
-(`harness/workflows/storage-atomic-tier.yaml`), not hardcoded in Python.
+`requires` are declared in the workflow YAML, not hardcoded in Python.
 `harness/engine/handlers.py` is generic across resource types via each
 workflow's `resource_config` block (`check_id_prefix`, `rules_dir`,
 `fixtures_dir`, `resource_type`) -- see
@@ -176,12 +196,33 @@ uv run --frozen python -m harness.tools.run_hypothesis_buildout
 uv run --frozen python -m harness.tools.run_hypothesis_buildout --workflow harness/workflows/<other>.yaml
 ```
 
+### Run the Tier 2 pipeline
+
+`pattern_extract` instead of `schema_extract`, same shared downstream
+states, its own workflow YAML:
+
+```bash
+uv run --frozen python -m harness.engine.runner harness/workflows/storage-pattern-tier.yaml
+```
+
+Or target a specific already-seeded Tier 2 hypothesis (`tier=2` in
+`hypotheses`, `property_conditions` non-null) the same way as Tier 1:
+
+```bash
+uv run --frozen python -m harness.engine.runner harness/workflows/storage-pattern-tier.yaml \
+  --start-state rule_compile --context '{"target_hypothesis_id": <id>}'
+```
+
 ### Regression-check the whole rule set for real
 
 Not currently automated as a single command (see "Known gaps" below);
-the pattern used throughout this project's history:
+the pattern used throughout this project's history. Reads each fixture's
+`variants_json` so it covers Tier 1 (2 variants) and Tier 2 (N variants)
+rules in the same loop -- falls back to the original vulnerable/safe
+pair for any older row with `variants_json IS NULL`:
 
 ```python
+import json
 from harness.journal.db import connect
 from harness.adapters import bicep_validate, rego_validate
 from pathlib import Path
@@ -190,8 +231,18 @@ conn = connect("harness/journal/harness.db")
 policy_dir = Path("rules/azure/storage")
 for r in conn.execute("SELECT check_id FROM rules ORDER BY check_id"):
     check_id = r["check_id"]
+    fixture_row = conn.execute(
+        "SELECT variants_json FROM fixtures WHERE check_id = ?", (check_id,)
+    ).fetchone()
+    variants = (
+        json.loads(fixture_row["variants_json"])
+        if fixture_row["variants_json"]
+        else [{"label": "vulnerable", "expected_verdict": "fail"},
+              {"label": "safe", "expected_verdict": "pass"}]
+    )
     fixture_dir = Path(f"fixtures/azure/storage/{check_id}")
-    for label, expected in (("vulnerable", "fail"), ("safe", "pass")):
+    for v in variants:
+        label, expected = v["label"], v["expected_verdict"]
         json_path = fixture_dir / f"{label}.json"
         bicep_validate.bicep_to_json(fixture_dir / f"{label}.bicep", json_path)
         result = rego_validate.validate(json_path, policy_dir, expected, check_id)
@@ -212,4 +263,13 @@ for r in conn.execute("SELECT check_id FROM rules ORDER BY check_id"):
   present and a near-identical hypothesis getting it right moments
   earlier in the same batch run (`AZ-STOR-041`). See
   `docs/patterns/rego-rule-authoring.md`.
-- **Tier 2/3 don't exist**, as covered above.
+- **Tier 2's dedup guard is weaker than Tier 1's `schema_coverage`
+  ledger.** `apply_pattern_hypotheses` only skips an exact
+  property-path-set match per resource_type -- there's no equivalent of
+  "have we fully covered the space" since the combinatorial space isn't
+  enumerable (see the plan's open questions in
+  `docs/plans/active/2026-07-02-tier-2-pattern-checks.md`).
+- **Tier 2 is only wired up for Storage.** A second resource type wants
+  its own `pattern_extract.md` and `<slug>-pattern-tier.yaml`; not
+  automated by `bootstrap_resource_type.py` yet.
+- **Tier 3 doesn't exist**, as covered above.
