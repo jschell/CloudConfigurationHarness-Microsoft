@@ -28,7 +28,22 @@ def connect(db_path: Path | str = DEFAULT_DB_PATH) -> sqlite3.Connection:
 def migrate(conn: sqlite3.Connection) -> None:
     """Apply schema.sql against an existing connection. Idempotent."""
     conn.executescript(SCHEMA_PATH.read_text())
+    _add_column_if_missing(conn, "hypotheses", "property_conditions", "TEXT")
+    _add_column_if_missing(conn, "fixtures", "variants_json", "TEXT")
+    _add_column_if_missing(conn, "fixture_history", "variants_json", "TEXT")
+    _add_column_if_missing(conn, "fixture_history", "bicep_files_json", "TEXT")
     conn.commit()
+
+
+def _add_column_if_missing(
+    conn: sqlite3.Connection, table: str, column: str, sql_type: str
+) -> None:
+    """CREATE TABLE IF NOT EXISTS in schema.sql doesn't add columns to a
+    table that already exists -- this covers real databases created
+    before a column was added to schema.sql."""
+    existing = {row["name"] for row in conn.execute(f"PRAGMA table_info({table})")}
+    if column not in existing:
+        conn.execute(f"ALTER TABLE {table} ADD COLUMN {column} {sql_type}")
 
 
 if __name__ == "__main__":

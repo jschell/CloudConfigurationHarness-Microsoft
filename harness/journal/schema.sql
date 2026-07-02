@@ -5,8 +5,16 @@ CREATE TABLE IF NOT EXISTS hypotheses (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
   resource_type TEXT NOT NULL,           -- e.g. Microsoft.Storage/storageAccounts
   property_path TEXT NOT NULL,           -- e.g. properties.networkAcls.defaultAction
+                                          -- for tier>=2, a human-readable joined summary
+                                          -- of the properties in property_conditions
+                                          -- (this column stays NOT NULL; the real,
+                                          -- structured data for tier>=2 lives in
+                                          -- property_conditions instead)
   risky_value TEXT,
   safe_value TEXT,
+  property_conditions TEXT,              -- JSON list of {property_path, risky_value,
+                                          -- safe_value}, tier>=2 only. NULL for tier 1,
+                                          -- which keeps using the three columns above.
   rationale TEXT NOT NULL,
   source_doc TEXT NOT NULL,              -- URL or repo path + commit SHA
   existing_policy_ref TEXT,              -- Azure built-in Policy name, nullable
@@ -52,6 +60,10 @@ CREATE TABLE IF NOT EXISTS fixtures (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
   check_id TEXT NOT NULL REFERENCES rules(check_id),
   fixture_path TEXT NOT NULL,            -- dir under fixtures/
+  variants_json TEXT,                    -- JSON list of {label, expected_verdict}.
+                                          -- NULL means the Tier 1 default:
+                                          -- [{"label":"vulnerable","expected_verdict":"fail"},
+                                          --  {"label":"safe","expected_verdict":"pass"}]
   ground_truth_method TEXT NOT NULL,     -- e.g. azure-policy-builtin, manual-expert, iam-simulator
   ground_truth_ref TEXT,                 -- policy definition ID or reviewer name
   created_at TEXT NOT NULL DEFAULT (datetime('now'))
@@ -103,8 +115,14 @@ CREATE TABLE IF NOT EXISTS fixture_history (
   workflow_run_id INTEGER REFERENCES workflow_runs(id),
   check_id TEXT NOT NULL,
   fixture_path TEXT NOT NULL,
-  vulnerable_bicep TEXT NOT NULL,
-  safe_bicep TEXT NOT NULL,
+  vulnerable_bicep TEXT NOT NULL,        -- kept for backward compat with existing rows;
+                                          -- new writes populate this with the first
+                                          -- "fail"-expected variant's content
+  safe_bicep TEXT NOT NULL,              -- same, first "pass"-expected variant
+  variants_json TEXT,                    -- authoritative for new writes: JSON list of
+                                          -- {label, expected_verdict}
+  bicep_files_json TEXT,                 -- authoritative for new writes: JSON dict of
+                                          -- {label: bicep_content}
   ground_truth_method TEXT,
   ground_truth_ref TEXT,
   created_at TEXT NOT NULL DEFAULT (datetime('now'))
