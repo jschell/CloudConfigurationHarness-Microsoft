@@ -42,9 +42,51 @@ CHECK_ID_PREFIX = "AZ-STOR"  # this workflow/handlers module is Storage-specific
 MAX_RETRIES = 3
 
 
+def _balanced_spans(text: str) -> list[tuple[int, int]]:
+    """Every top-level (start, end) span of a balanced {...} or [...] in
+    text -- "top-level" meaning outermost only, tracking combined depth
+    across both bracket types so an object nested inside an array isn't
+    also recorded as its own span -- ignoring brackets/braces inside
+    string literals (Rego rule bodies routinely contain `{`/`}`, so naive
+    per-character counting without string-awareness would miscount)."""
+    spans = []
+    depth = 0
+    start = None
+    in_string = False
+    escape = False
+    for i, ch in enumerate(text):
+        if in_string:
+            if escape:
+                escape = False
+            elif ch == "\\":
+                escape = True
+            elif ch == '"':
+                in_string = False
+            continue
+        if ch == '"':
+            in_string = True
+            continue
+        if ch in "{[":
+            if depth == 0:
+                start = i
+            depth += 1
+        elif ch in "}]":
+            if depth > 0:
+                depth -= 1
+                if depth == 0 and start is not None:
+                    spans.append((start, i))
+    return spans
+
+
 def _extract_json(raw_result: str) -> dict[str, Any] | list[dict[str, Any]]:
-    """Model output should be pure JSON; tolerate a fenced code block and/or
-    leading prose by locating the outermost {...} or [...] span."""
+    """Model output should be pure JSON; tolerate a fenced code block
+    and/or leading prose. If the model second-guesses itself and emits
+    more than one top-level JSON blob (draft, then "wait, let me
+    reconsider", then a revised one), prefer the LAST one that parses --
+    it supersedes what came before. Confirmed live: a rule_compile
+    response containing two {...} blocks (a draft and a corrected
+    version) broke the old naive first-'{'-to-last-'}' span, which
+    spanned both blobs plus the prose between them."""
     text = raw_result.strip()
     if "```" in text:
         fenced = text.split("```")[1]
@@ -57,15 +99,12 @@ def _extract_json(raw_result: str) -> dict[str, Any] | list[dict[str, Any]]:
     except json.JSONDecodeError:
         pass
 
-    for open_ch, close_ch in (("{", "}"), ("[", "]")):
-        start = text.find(open_ch)
-        end = text.rfind(close_ch)
-        if start != -1 and end != -1 and end > start:
-            candidate = text[start : end + 1]
-            try:
-                return json.loads(candidate)
-            except json.JSONDecodeError:
-                continue
+    spans = _balanced_spans(text)
+    for start, end in sorted(spans, key=lambda pair: pair[0], reverse=True):
+        try:
+            return json.loads(text[start : end + 1])
+        except json.JSONDecodeError:
+            continue
     raise ValueError(f"could not extract JSON from model output: {raw_result!r}")
 
 
