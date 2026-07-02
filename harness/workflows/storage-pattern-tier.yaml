@@ -1,0 +1,66 @@
+# Tier-2 (pattern-check) FSM for Storage account configuration
+# hypotheses -- see docs/plans/active/2026-07-02-tier-2-pattern-checks.md.
+# pattern_extract -> rule_compile -> fixture_generate -> fixture_validate -> gate
+#
+# rule_compile/fixture_generate/fixture_validate/gate are unchanged from
+# storage-atomic-tier.yaml: they're tier-generic (see
+# docs/patterns/deterministic-check-id-assignment.md and the N-variant
+# fixture generalization in harness/engine/handlers.py). Only
+# pattern_extract differs from Tier 1's schema_extract, since Tier 2
+# discovery proposes a handful of plausible combinations instead of
+# exhaustively sweeping every property.
+workflow: storage-pattern-tier
+resource_config:
+  resource_type: Microsoft.Storage/storageAccounts
+  check_id_prefix: AZ-STOR-PAT
+  rules_dir: rules/azure/storage
+  fixtures_dir: fixtures/azure/storage
+states:
+  - name: pattern_extract
+    role: orchestrator
+    reads: [hypotheses, schema_coverage]
+    writes: [hypotheses]
+    read_files:
+      [
+        sources/azure/storage/swagger-refs.md,
+        sources/azure/storage/storage-account-properties.enumerated.json,
+      ]
+    prompt_template: harness/workflows/prompts/pattern_extract.md
+    handler: harness.engine.handlers.pattern_extract
+    next_on_success: rule_compile
+    next_on_failure: end
+
+  - name: rule_compile
+    role: executor_glm
+    reads: [hypotheses, rules]
+    writes: [rules]
+    prompt_template: harness/workflows/prompts/rule_compile.md
+    handler: harness.engine.handlers.rule_compile
+    next_on_success: fixture_generate
+    next_on_failure: end
+
+  - name: fixture_generate
+    role: executor_glm
+    reads: [rules]
+    writes: [fixtures]
+    prompt_template: harness/workflows/prompts/fixture_generate.md
+    handler: harness.engine.handlers.fixture_generate
+    next_on_success: fixture_validate
+    next_on_failure: end
+
+  - name: fixture_validate
+    type: adapter
+    reads: [rules, fixtures]
+    writes: [runs]
+    requires: [az, conftest]
+    handler: harness.engine.handlers.fixture_validate
+    next_on_success: gate
+    next_on_failure: gate
+
+  - name: gate
+    type: gate
+    reads: [runs, rules]
+    writes: [rules]
+    handler: harness.engine.handlers.gate
+    next_on_success: end
+    next_on_failure: rule_compile
