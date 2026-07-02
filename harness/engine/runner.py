@@ -223,6 +223,10 @@ class Runner:
         initial_context = dict(initial_context or {})
         initial_context["_model_map"] = model_map
         initial_context["_role_override"] = self.role_override
+        # Handlers use this to stay generic across resource types -- see
+        # docs/onboarding-new-resource-type.md -- instead of hardcoding
+        # e.g. a check_id prefix or rules directory.
+        initial_context["_resource_config"] = workflow.get("resource_config", {})
 
         cur = self.conn.execute(
             "INSERT INTO workflow_runs (workflow_name, workflow_path, current_state, status, context_json) "

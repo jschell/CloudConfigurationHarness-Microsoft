@@ -1,10 +1,17 @@
-"""State handlers for the storage-atomic-tier workflow.
+"""State handlers for atomic-tier (Tier 1) FSM workflows.
 
 Each handler is referenced from a workflow YAML's `handler:` field and
 receives (conn, state, context, raw_result) for LLM states or
 (conn, state, context) for adapter/gate states. Handlers are the only
 place that parses model JSON output and turns it into journal rows and
 rule/fixture files on disk -- runner.py itself stays state-shape-agnostic.
+
+Generic across resource types (see docs/onboarding-new-resource-type.md):
+rule_compile/fixture_generate read check_id_prefix/rules_dir/fixtures_dir
+from context["_resource_config"] (set by Runner.start() from the
+workflow YAML's top-level `resource_config`), not hardcoded constants.
+A new resource type's own workflow YAML supplies its own resource_config
+-- nothing in this file should need to change to onboard one.
 
 Expected model output shapes (documented here since they are the schema
 each prompt template must produce):
@@ -38,8 +45,18 @@ from typing import Any
 from harness.adapters import bicep_validate, rego_validate
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
-CHECK_ID_PREFIX = "AZ-STOR"  # this workflow/handlers module is Storage-specific
 MAX_RETRIES = 3
+
+
+def _resource_config(context: dict[str, Any]) -> dict[str, str]:
+    config = context.get("_resource_config")
+    if not config:
+        raise KeyError(
+            "context is missing _resource_config -- Runner.start() sets this "
+            "from the workflow YAML's top-level resource_config; see "
+            "docs/onboarding-new-resource-type.md"
+        )
+    return config
 
 
 def _balanced_spans(text: str) -> list[tuple[int, int]]:
@@ -200,15 +217,17 @@ def schema_extract(
 
 
 def _check_id_for_hypothesis(
-    conn: sqlite3.Connection, hypothesis_id: int
+    conn: sqlite3.Connection, hypothesis_id: int, check_id_prefix: str
 ) -> tuple[str, bool]:
     """Deterministically assign a check_id -- the model is never asked to
     invent one (see the module docstring). Returns (check_id, is_retry):
     is_retry=True means `rules` already has a row for this hypothesis
     (a gate-triggered rule_compile retry), so its existing check_id is
     reused rather than minted fresh. Never reuses a number that appears
-    anywhere in `rules` OR `rule_history`, so a superseded/overwritten
-    check_id's number is never handed out again either.
+    anywhere in `rules` OR `rule_history` FOR THIS PREFIX, so a
+    superseded/overwritten check_id's number is never handed out again
+    either -- scoped to check_id_prefix so two resource types' numbering
+    (e.g. AZ-STOR-* and a future AZ-VM-*) never interfere with each other.
     """
     existing = conn.execute(
         "SELECT check_id FROM rules WHERE hypothesis_id = ?", (hypothesis_id,)
@@ -216,14 +235,18 @@ def _check_id_for_hypothesis(
     if existing:
         return existing["check_id"], True
 
+    like_pattern = f"{check_id_prefix}-%"
     numbers = []
     for table in ("rules", "rule_history"):
-        for row in conn.execute(f"SELECT DISTINCT check_id FROM {table}").fetchall():
+        for row in conn.execute(
+            f"SELECT DISTINCT check_id FROM {table} WHERE check_id LIKE ?",
+            (like_pattern,),
+        ).fetchall():
             match = re.search(r"(\d+)$", row["check_id"])
             if match:
                 numbers.append(int(match.group(1)))
     next_number = max(numbers, default=0) + 1
-    return f"{CHECK_ID_PREFIX}-{next_number:03d}", False
+    return f"{check_id_prefix}-{next_number:03d}", False
 
 
 def rule_compile(
@@ -234,8 +257,11 @@ def rule_compile(
 ) -> bool:
     parsed = _extract_json_object(raw_result)
     hypothesis_id = parsed["hypothesis_id"]
-    check_id, is_retry = _check_id_for_hypothesis(conn, hypothesis_id)
-    rule_path = f"rules/azure/storage/{check_id}.rego"
+    config = _resource_config(context)
+    check_id, is_retry = _check_id_for_hypothesis(
+        conn, hypothesis_id, config["check_id_prefix"]
+    )
+    rule_path = f"{config['rules_dir']}/{check_id}.rego"
     namespace = "checks." + check_id.lower().replace("-", "_")
     # The model can't know the correct package name in advance either
     # (it doesn't know check_id), so it writes a placeholder and the
@@ -288,7 +314,8 @@ def fixture_generate(
     # echoed back by the model (same reasoning as rule_compile's check_id
     # -- see the module docstring and _check_id_for_hypothesis).
     check_id = context["check_id"]
-    fixture_path = f"fixtures/azure/storage/{check_id}"
+    config = _resource_config(context)
+    fixture_path = f"{config['fixtures_dir']}/{check_id}"
     fixture_dir = REPO_ROOT / fixture_path
     fixture_dir.mkdir(parents=True, exist_ok=True)
 

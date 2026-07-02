@@ -1,4 +1,4 @@
-# Tier-1 (atomic-check) FSM for Azure Storage account configuration hypotheses.
+# Tier-1 (atomic-check) FSM for {{RESOURCE_TYPE}} configuration hypotheses.
 # schema_extract -> rule_compile -> fixture_generate -> fixture_validate -> gate
 #
 # gate's next_on_success/next_on_failure are reinterpreted for a pure-logic
@@ -8,15 +8,16 @@
 # the failure reason appended to context.
 #
 # resource_config is what makes handlers.py generic across resource types --
-# see docs/onboarding-new-resource-type.md. A new resource type's workflow
-# YAML only needs its own resource_config + prompt templates; nothing in
-# harness/engine/handlers.py should need to change.
-workflow: storage-atomic-tier
+# see docs/onboarding-new-resource-type.md. rule_compile/fixture_generate.md
+# are shared, resource-agnostic prompts (see harness/workflows/prompts/) --
+# only schema_extract needs a resource-specific prompt, generated from
+# harness/workflows/prompts/_templates/schema_extract.md.template.
+workflow: {{SLUG}}-atomic-tier
 resource_config:
-  resource_type: Microsoft.Storage/storageAccounts
-  check_id_prefix: AZ-STOR
-  rules_dir: rules/azure/storage
-  fixtures_dir: fixtures/azure/storage
+  resource_type: {{RESOURCE_TYPE}}
+  check_id_prefix: {{CHECK_ID_PREFIX}}
+  rules_dir: rules/{{PROVIDER_DIR}}
+  fixtures_dir: fixtures/{{PROVIDER_DIR}}
 states:
   - name: schema_extract
     role: orchestrator
@@ -24,10 +25,10 @@ states:
     writes: [hypotheses, schema_coverage]
     read_files:
       [
-        sources/azure/storage/swagger-refs.md,
-        sources/azure/storage/storage-account-properties.enumerated.json,
+        {{POLICY_REFS_PATH}},
+        {{ENUMERATED_PROPERTIES_PATH}},
       ]
-    prompt_template: harness/workflows/prompts/schema_extract.md
+    prompt_template: harness/workflows/prompts/{{SLUG}}/schema_extract.md
     handler: harness.engine.handlers.schema_extract
     next_on_success: rule_compile
     next_on_failure: end

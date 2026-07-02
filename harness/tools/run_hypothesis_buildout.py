@@ -13,8 +13,15 @@ retry-with-backoff is for a different failure class: transient
 infrastructure errors (API overload, timeouts) that abort the run before
 the gate ever gets a verdict.
 
+Generic across resource types (see docs/onboarding-new-resource-type.md):
+`hypotheses` is a shared table tagged with `resource_type`, so this only
+ever processes hypotheses matching the given workflow's own
+resource_config.resource_type -- a second resource type's hypotheses
+sitting in the same journal are never touched by the wrong workflow.
+
 Usage:
     python -m harness.tools.run_hypothesis_buildout
+    python -m harness.tools.run_hypothesis_buildout --workflow harness/workflows/vm-atomic-tier.yaml
     python -m harness.tools.run_hypothesis_buildout --role-override executor_glm=executor_claude
 """
 
@@ -25,31 +32,41 @@ import subprocess
 import time
 from pathlib import Path
 
-from harness.engine.runner import Runner, WorkflowError
+from harness.engine.runner import Runner, WorkflowError, load_workflow
 
-WORKFLOW_PATH = (
+DEFAULT_WORKFLOW_PATH = (
     Path(__file__).resolve().parents[1] / "workflows" / "storage-atomic-tier.yaml"
 )
 MAX_ATTEMPTS = 3
 RETRY_BACKOFF_SECONDS = 15
 
 
-def remaining_hypothesis_ids(conn) -> list[int]:
+def remaining_hypothesis_ids(conn, resource_type: str) -> list[int]:
     compiled = {
         r["hypothesis_id"] for r in conn.execute("SELECT hypothesis_id FROM rules")
     }
     return [
         r["id"]
-        for r in conn.execute("SELECT id FROM hypotheses ORDER BY id").fetchall()
+        for r in conn.execute(
+            "SELECT id FROM hypotheses WHERE resource_type = ? ORDER BY id",
+            (resource_type,),
+        ).fetchall()
         if r["id"] not in compiled
     ]
 
 
-def run(db_path=None, role_override: dict[str, str] | None = None) -> dict[int, str]:
+def run(
+    workflow_path: Path,
+    db_path=None,
+    role_override: dict[str, str] | None = None,
+) -> dict[int, str]:
+    workflow = load_workflow(workflow_path)
+    resource_type = workflow["resource_config"]["resource_type"]
+
     runner = Runner(db_path=db_path, role_override=role_override or {})
     conn = runner.conn
-    ids = remaining_hypothesis_ids(conn)
-    print(f"{len(ids)} hypotheses remaining to compile: {ids}")
+    ids = remaining_hypothesis_ids(conn, resource_type)
+    print(f"{len(ids)} hypotheses remaining to compile for {resource_type}: {ids}")
 
     results: dict[int, str] = {}
     for hypothesis_id in ids:
@@ -58,7 +75,7 @@ def run(db_path=None, role_override: dict[str, str] | None = None) -> dict[int, 
         for attempt in range(1, MAX_ATTEMPTS + 1):
             try:
                 runner.start(
-                    WORKFLOW_PATH,
+                    workflow_path,
                     start_state="rule_compile",
                     initial_context={"target_hypothesis_id": hypothesis_id},
                 )
@@ -98,6 +115,7 @@ def run(db_path=None, role_override: dict[str, str] | None = None) -> dict[int, 
 
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument("--workflow", type=Path, default=DEFAULT_WORKFLOW_PATH)
     parser.add_argument("--db", type=Path, default=None)
     parser.add_argument(
         "--role-override",
@@ -108,7 +126,7 @@ def main() -> int:
     args = parser.parse_args()
     role_override = dict(pair.split("=", 1) for pair in args.role_override)
 
-    results = run(db_path=args.db, role_override=role_override)
+    results = run(args.workflow, db_path=args.db, role_override=role_override)
     print("\n=== summary ===")
     for hypothesis_id, outcome in results.items():
         print(f"hypothesis {hypothesis_id}: {outcome}")

@@ -15,8 +15,9 @@ configuration (`safe_value`).
 Start the file with the literal line `package PLACEHOLDER` -- the harness
 replaces it with the correct `checks.<check_id>` namespace after you
 reply (you are not told the check_id in advance; see below for why). Do
-NOT use `package main`. `--policy rules/azure/storage/` loads every
-check's .rego file at once; if two checks shared one namespace, testing
+NOT use `package main`. The adapter's `--policy <rules directory>` loads
+every check's .rego file in that directory at once; if two checks shared
+one namespace, testing
 one check's fixture would also evaluate every other check's `deny` rules
 against it, and a new rule could silently break an older, already-
 validated check's fixtures. Each check gets its own package specifically
