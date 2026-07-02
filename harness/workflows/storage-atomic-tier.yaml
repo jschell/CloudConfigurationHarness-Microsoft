@@ -10,9 +10,13 @@ workflow: storage-atomic-tier
 states:
   - name: schema_extract
     role: orchestrator
-    reads: [hypotheses]
-    writes: [hypotheses]
-    read_files: [sources/azure/storage/swagger-refs.md]
+    reads: [hypotheses, schema_coverage]
+    writes: [hypotheses, schema_coverage]
+    read_files:
+      [
+        sources/azure/storage/swagger-refs.md,
+        sources/azure/storage/storage-account-properties.enumerated.json,
+      ]
     prompt_template: harness/workflows/prompts/schema_extract.md
     handler: harness.engine.handlers.schema_extract
     next_on_success: rule_compile

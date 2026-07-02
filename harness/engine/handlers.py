@@ -9,8 +9,10 @@ rule/fixture files on disk -- runner.py itself stays state-shape-agnostic.
 Expected model output shapes (documented here since they are the schema
 each prompt template must produce):
 
-    schema_extract  -> JSON array of hypothesis objects matching the
-                        `hypotheses` table columns (minus id/created_at).
+    schema_extract  -> JSON array of classification objects (see
+                        schema_coverage below), one per property in the
+                        enumerated property list the prompt was given --
+                        NOT just the security-relevant ones.
     rule_compile    -> {"hypothesis_id", "check_id", "rule_path", "rego_content"}
     fixture_generate-> {"check_id", "fixture_dir", "vulnerable_bicep",
                          "safe_bicep", "ground_truth_method", "ground_truth_ref"}
@@ -68,34 +70,82 @@ def _extract_json_object(raw_result: str) -> dict[str, Any]:
     return parsed
 
 
+def apply_schema_classifications(
+    conn: sqlite3.Connection, classifications: list[dict[str, Any]]
+) -> int:
+    """Insert a batch of property classifications into
+    `schema_coverage`/`hypotheses`. Shared by the `schema_extract` FSM
+    handler (one call, whatever the model proposes) and
+    `harness.tools.run_schema_coverage` (many small batched calls) -- see
+    docs/patterns/schema-coverage-discovery.md. `schema_coverage` is the
+    completeness ledger and the dedup guard: a (resource_type,
+    property_path) already present there is skipped regardless of what
+    the model says about it this call, so a model re-proposing something
+    already decided (or hallucinating a duplicate) can't corrupt the
+    ledger or double-insert a hypothesis. Returns the number of rows
+    actually inserted (i.e. excluding skipped duplicates).
+    """
+    inserted = 0
+    for item in classifications:
+        resource_type = item["resource_type"]
+        property_path = item["property_path"]
+
+        already_covered = conn.execute(
+            "SELECT 1 FROM schema_coverage WHERE resource_type = ? AND property_path = ?",
+            (resource_type, property_path),
+        ).fetchone()
+        if already_covered:
+            continue
+
+        relevant = bool(item["relevant"])
+        hypothesis_id = None
+        if relevant:
+            cur = conn.execute(
+                """INSERT INTO hypotheses
+                   (resource_type, property_path, risky_value, safe_value, rationale,
+                    source_doc, existing_policy_ref, proposed_by_model, tier, status)
+                   VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 'proposed')""",
+                (
+                    resource_type,
+                    property_path,
+                    item.get("risky_value"),
+                    item.get("safe_value"),
+                    item["rationale"],
+                    item["source_doc"],
+                    item.get("existing_policy_ref"),
+                    item["proposed_by_model"],
+                    item["tier"],
+                ),
+            )
+            hypothesis_id = cur.lastrowid
+
+        conn.execute(
+            "INSERT INTO schema_coverage "
+            "(resource_type, property_path, relevant, rationale, hypothesis_id) "
+            "VALUES (?, ?, ?, ?, ?)",
+            (
+                resource_type,
+                property_path,
+                1 if relevant else 0,
+                item["rationale"],
+                hypothesis_id,
+            ),
+        )
+        inserted += 1
+    conn.commit()
+    return inserted
+
+
 def schema_extract(
     conn: sqlite3.Connection,
     state: dict[str, Any],
     context: dict[str, Any],
     raw_result: str,
 ) -> bool:
-    hypotheses = _extract_json(raw_result)
-    if isinstance(hypotheses, dict):
-        hypotheses = [hypotheses]
-    for hyp in hypotheses:
-        conn.execute(
-            """INSERT INTO hypotheses
-               (resource_type, property_path, risky_value, safe_value, rationale,
-                source_doc, existing_policy_ref, proposed_by_model, tier, status)
-               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 'proposed')""",
-            (
-                hyp["resource_type"],
-                hyp["property_path"],
-                hyp.get("risky_value"),
-                hyp.get("safe_value"),
-                hyp["rationale"],
-                hyp["source_doc"],
-                hyp.get("existing_policy_ref"),
-                hyp["proposed_by_model"],
-                hyp["tier"],
-            ),
-        )
-    conn.commit()
+    classifications = _extract_json(raw_result)
+    if isinstance(classifications, dict):
+        classifications = [classifications]
+    apply_schema_classifications(conn, classifications)
     return True
 
 

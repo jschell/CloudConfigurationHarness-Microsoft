@@ -16,6 +16,29 @@ CREATE TABLE IF NOT EXISTS hypotheses (
   created_at TEXT NOT NULL DEFAULT (datetime('now'))
 );
 
+-- Structured-discovery completeness ledger (see
+-- docs/patterns/schema-coverage-discovery.md). One row per property in a
+-- resource type's deterministically enumerated property list
+-- (harness/tools/enumerate_schema_properties.py), recording whether
+-- schema_extract judged it security-relevant (-> linked hypothesis) or
+-- not (-> rationale only). This is what "structured, not repeated,
+-- knows when it's done" actually means in code: `hypotheses` alone can't
+-- answer "did we already consider property X and decide it doesn't
+-- matter" or "how much of the resource have we covered" -- this table
+-- can, since it's one row per property, ever, append-only, unique on
+-- (resource_type, property_path).
+CREATE TABLE IF NOT EXISTS schema_coverage (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  resource_type TEXT NOT NULL,
+  property_path TEXT NOT NULL,
+  relevant INTEGER NOT NULL,             -- 0 or 1
+  rationale TEXT NOT NULL,
+  hypothesis_id INTEGER REFERENCES hypotheses(id), -- set iff relevant=1
+  source_note TEXT,                      -- provenance of the enumerated list used
+  created_at TEXT NOT NULL DEFAULT (datetime('now')),
+  UNIQUE (resource_type, property_path)
+);
+
 CREATE TABLE IF NOT EXISTS rules (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
   hypothesis_id INTEGER NOT NULL REFERENCES hypotheses(id),

@@ -64,7 +64,7 @@ ROLES_PATH = ENGINE_DIR / "roles.yaml"
 ENV_PATH = ENGINE_DIR / ".env"
 REPO_ROOT = Path(__file__).resolve().parents[2]
 
-ORCHESTRATOR_ALLOWED_READS = {"hypotheses", "rules", "runs"}
+ORCHESTRATOR_ALLOWED_READS = {"hypotheses", "rules", "runs", "schema_coverage"}
 
 
 class WorkflowError(RuntimeError):
@@ -149,7 +149,8 @@ def _invoke_claude(role_name: str, roles: dict, prompt: str) -> str:
             env["ANTHROPIC_API_KEY"] = credential
 
     result = subprocess.run(
-        ["claude", "-p", prompt, "--output-format", "json", "--model", role["model"]],
+        ["claude", "-p", "--output-format", "json", "--model", role["model"]],
+        input=prompt,
         env=env,
         capture_output=True,
         text=True,

@@ -1,0 +1,1446 @@
+{
+  "root_definition": "StorageAccountProperties",
+  "source_note": "Azure/azure-rest-api-specs@f7db5b77f98144ddacf6ce563330ded00f0b71d1 specification/storage/resource-manager/Microsoft.Storage/stable/2025-01-01/storage.json",
+  "property_count": 166,
+  "properties": [
+    {
+      "property_path": "properties.accessTier",
+      "type": "string",
+      "enum": [
+        "Hot",
+        "Cool",
+        "Premium",
+        "Cold"
+      ],
+      "default": null,
+      "description": "Required for storage accounts where kind = BlobStorage. The access tier is used for billing. The 'Premium' access tier is the default value for premium block blobs storage account type and it cannot be changed for the premium block blobs storage account type.",
+      "read_only": true
+    },
+    {
+      "property_path": "properties.accountMigrationInProgress",
+      "type": "boolean",
+      "enum": null,
+      "default": null,
+      "description": "If customer initiated account migration is in progress, the value will be true else it will be null.",
+      "read_only": true
+    },
+    {
+      "property_path": "properties.allowBlobPublicAccess",
+      "type": "boolean",
+      "enum": null,
+      "default": null,
+      "description": "Allow or disallow public access to all blobs or containers in the storage account. The default interpretation is false for this property.",
+      "read_only": false
+    },
+    {
+      "property_path": "properties.allowCrossTenantReplication",
+      "type": "boolean",
+      "enum": null,
+      "default": null,
+      "description": "Allow or disallow cross AAD tenant object replication. Set this property to true for new or existing accounts only if object replication policies will involve storage accounts in different AAD tenants. The default interpretation is false for new accounts to follow best security practices by default.",
+      "read_only": false
+    },
+    {
+      "property_path": "properties.allowSharedKeyAccess",
+      "type": "boolean",
+      "enum": null,
+      "default": null,
+      "description": "Indicates whether the storage account permits requests to be authorized with the account access key via Shared Key. If false, then all requests, including shared access signatures, must be authorized with Azure Active Directory (Azure AD). The default value is null, which is equivalent to true.",
+      "read_only": false
+    },
+    {
+      "property_path": "properties.allowedCopyScope",
+      "type": "string",
+      "enum": [
+        "PrivateLink",
+        "AAD"
+      ],
+      "default": null,
+      "description": "Restrict copy to and from Storage Accounts within an AAD tenant or with Private Links to the same VNet.",
+      "read_only": false
+    },
+    {
+      "property_path": "properties.azureFilesIdentityBasedAuthentication.activeDirectoryProperties.accountType",
+      "type": "string",
+      "enum": [
+        "User",
+        "Computer"
+      ],
+      "default": null,
+      "description": "Specifies the Active Directory account type for Azure Storage. If directoryServiceOptions is set to AD (AD DS authentication), this property is optional. If provided, samAccountName should also be provided. For directoryServiceOptions AADDS (Entra DS authentication) or AADKERB (Entra authentication), this property can be omitted.",
+      "read_only": false
+    },
+    {
+      "property_path": "properties.azureFilesIdentityBasedAuthentication.activeDirectoryProperties.azureStorageSid",
+      "type": "string",
+      "enum": null,
+      "default": null,
+      "description": "Specifies the security identifier (SID) for Azure Storage. If directoryServiceOptions is set to AD (AD DS authentication), this property is required. Otherwise, it can be omitted.",
+      "read_only": false
+    },
+    {
+      "property_path": "properties.azureFilesIdentityBasedAuthentication.activeDirectoryProperties.domainGuid",
+      "type": "string",
+      "enum": null,
+      "default": null,
+      "description": "Specifies the domain GUID. If directoryServiceOptions is set to AD (AD DS authentication), this property is required. If directoryServiceOptions is set to AADDS (Entra DS authentication), this property can be omitted. If directoryServiceOptions is set to AADKERB (Entra authentication), this property is optional; it is needed to support configuration of directory- and file-level permissions via Windows File Explorer, but is not required for authentication.",
+      "read_only": false
+    },
+    {
+      "property_path": "properties.azureFilesIdentityBasedAuthentication.activeDirectoryProperties.domainName",
+      "type": "string",
+      "enum": null,
+      "default": null,
+      "description": "Specifies the primary domain that the AD DNS server is authoritative for. This property is required if directoryServiceOptions is set to AD (AD DS authentication). If directoryServiceOptions is set to AADDS (Entra DS authentication), providing this property is optional, as it will be inferred automatically if omitted. If directoryServiceOptions is set to AADKERB (Entra authentication), this property is optional; it is needed to support configuration of directory- and file-level permissions via Windows File Explorer, but is not required for authentication.",
+      "read_only": false
+    },
+    {
+      "property_path": "properties.azureFilesIdentityBasedAuthentication.activeDirectoryProperties.domainSid",
+      "type": "string",
+      "enum": null,
+      "default": null,
+      "description": "Specifies the security identifier (SID) of the AD domain. If directoryServiceOptions is set to AD (AD DS authentication), this property is required. Otherwise, it can be omitted.",
+      "read_only": false
+    },
+    {
+      "property_path": "properties.azureFilesIdentityBasedAuthentication.activeDirectoryProperties.forestName",
+      "type": "string",
+      "enum": null,
+      "default": null,
+      "description": "Specifies the Active Directory forest to get. If directoryServiceOptions is set to AD (AD DS authentication), this property is required. Otherwise, it can be omitted.",
+      "read_only": false
+    },
+    {
+      "property_path": "properties.azureFilesIdentityBasedAuthentication.activeDirectoryProperties.netBiosDomainName",
+      "type": "string",
+      "enum": null,
+      "default": null,
+      "description": "Specifies the NetBIOS domain name. If directoryServiceOptions is set to AD (AD DS authentication), this property is required. Otherwise, it can be omitted.",
+      "read_only": false
+    },
+    {
+      "property_path": "properties.azureFilesIdentityBasedAuthentication.activeDirectoryProperties.samAccountName",
+      "type": "string",
+      "enum": null,
+      "default": null,
+      "description": "Specifies the Active Directory SAMAccountName for Azure Storage. If directoryServiceOptions is set to AD (AD DS authentication), this property is optional. If provided, accountType should also be provided. For directoryServiceOptions AADDS (Entra DS authentication) or AADKERB (Entra authentication), this property can be omitted.",
+      "read_only": false
+    },
+    {
+      "property_path": "properties.azureFilesIdentityBasedAuthentication.defaultSharePermission",
+      "type": "string",
+      "enum": [
+        "None",
+        "StorageFileDataSmbShareReader",
+        "StorageFileDataSmbShareContributor",
+        "StorageFileDataSmbShareElevatedContributor"
+      ],
+      "default": null,
+      "description": "Default share permission for users using Kerberos authentication if RBAC role is not assigned.",
+      "read_only": false
+    },
+    {
+      "property_path": "properties.azureFilesIdentityBasedAuthentication.directoryServiceOptions",
+      "type": "string",
+      "enum": [
+        "None",
+        "AADDS",
+        "AD",
+        "AADKERB"
+      ],
+      "default": null,
+      "description": "Indicates the directory service used. Note that this enum may be extended in the future.",
+      "read_only": false
+    },
+    {
+      "property_path": "properties.azureFilesIdentityBasedAuthentication.smbOAuthSettings.isSmbOAuthEnabled",
+      "type": "boolean",
+      "enum": null,
+      "default": null,
+      "description": "Specifies if managed identities can access SMB shares using OAuth. The default interpretation is false for this property.",
+      "read_only": false
+    },
+    {
+      "property_path": "properties.blobRestoreStatus.failureReason",
+      "type": "string",
+      "enum": null,
+      "default": null,
+      "description": "Failure reason when blob restore is failed.",
+      "read_only": true
+    },
+    {
+      "property_path": "properties.blobRestoreStatus.parameters.blobRanges[].endRange",
+      "type": "string",
+      "enum": null,
+      "default": null,
+      "description": "Blob end range. This is exclusive. Empty means account end.",
+      "read_only": false
+    },
+    {
+      "property_path": "properties.blobRestoreStatus.parameters.blobRanges[].startRange",
+      "type": "string",
+      "enum": null,
+      "default": null,
+      "description": "Blob start range. This is inclusive. Empty means account start.",
+      "read_only": false
+    },
+    {
+      "property_path": "properties.blobRestoreStatus.parameters.timeToRestore",
+      "type": "string",
+      "enum": null,
+      "default": null,
+      "description": "Restore blob to the specified time.",
+      "read_only": false
+    },
+    {
+      "property_path": "properties.blobRestoreStatus.restoreId",
+      "type": "string",
+      "enum": null,
+      "default": null,
+      "description": "Id for tracking blob restore request.",
+      "read_only": true
+    },
+    {
+      "property_path": "properties.blobRestoreStatus.status",
+      "type": "string",
+      "enum": [
+        "InProgress",
+        "Complete",
+        "Failed"
+      ],
+      "default": null,
+      "description": "The status of blob restore progress. Possible values are: - InProgress: Indicates that blob restore is ongoing. - Complete: Indicates that blob restore has been completed successfully. - Failed: Indicates that blob restore is failed.",
+      "read_only": true
+    },
+    {
+      "property_path": "properties.creationTime",
+      "type": "string",
+      "enum": null,
+      "default": null,
+      "description": "Gets the creation date and time of the storage account in UTC.",
+      "read_only": true
+    },
+    {
+      "property_path": "properties.customDomain.name",
+      "type": "string",
+      "enum": null,
+      "default": null,
+      "description": "Gets or sets the custom domain name assigned to the storage account. Name is the CNAME source.",
+      "read_only": false
+    },
+    {
+      "property_path": "properties.customDomain.useSubDomainName",
+      "type": "boolean",
+      "enum": null,
+      "default": null,
+      "description": "Indicates whether indirect CName validation is enabled. Default value is false. This should only be set on updates.",
+      "read_only": false
+    },
+    {
+      "property_path": "properties.defaultToOAuthAuthentication",
+      "type": "boolean",
+      "enum": null,
+      "default": null,
+      "description": "A boolean flag which indicates whether the default authentication is OAuth or not. The default interpretation is false for this property.",
+      "read_only": false
+    },
+    {
+      "property_path": "properties.dnsEndpointType",
+      "type": "string",
+      "enum": [
+        "Standard",
+        "AzureDnsZone"
+      ],
+      "default": null,
+      "description": "Allows you to specify the type of endpoint. Set this to AzureDNSZone to create a large number of accounts in a single subscription, which creates accounts in an Azure DNS Zone and the endpoint URL will have an alphanumeric DNS Zone identifier.",
+      "read_only": false
+    },
+    {
+      "property_path": "properties.dualStackEndpointPreference.publishIpv6Endpoint",
+      "type": "boolean",
+      "enum": null,
+      "default": null,
+      "description": "A boolean flag which indicates whether IPv6 storage endpoints are to be published.",
+      "read_only": false
+    },
+    {
+      "property_path": "properties.enableExtendedGroups",
+      "type": "boolean",
+      "enum": null,
+      "default": null,
+      "description": "Enables extended group support with local users feature, if set to true",
+      "read_only": false
+    },
+    {
+      "property_path": "properties.encryption.identity.federatedIdentityClientId",
+      "type": "string",
+      "enum": null,
+      "default": null,
+      "description": "ClientId of the multi-tenant application to be used in conjunction with the user-assigned identity for cross-tenant customer-managed-keys server-side encryption on the storage account.",
+      "read_only": false
+    },
+    {
+      "property_path": "properties.encryption.identity.userAssignedIdentity",
+      "type": "string",
+      "enum": null,
+      "default": null,
+      "description": "Resource identifier of the UserAssigned identity to be associated with server-side encryption on the storage account.",
+      "read_only": false
+    },
+    {
+      "property_path": "properties.encryption.keySource",
+      "type": "string",
+      "enum": [
+        "Microsoft.Storage",
+        "Microsoft.Keyvault"
+      ],
+      "default": "Microsoft.Storage",
+      "description": "The encryption keySource (provider). Possible values (case-insensitive):  Microsoft.Storage, Microsoft.Keyvault",
+      "read_only": false
+    },
+    {
+      "property_path": "properties.encryption.keyvaultproperties.currentVersionedKeyExpirationTimestamp",
+      "type": "string",
+      "enum": null,
+      "default": null,
+      "description": "This is a read only property that represents the expiration time of the current version of the customer managed key used for encryption.",
+      "read_only": true
+    },
+    {
+      "property_path": "properties.encryption.keyvaultproperties.currentVersionedKeyIdentifier",
+      "type": "string",
+      "enum": null,
+      "default": null,
+      "description": "The object identifier of the current versioned Key Vault Key in use.",
+      "read_only": true
+    },
+    {
+      "property_path": "properties.encryption.keyvaultproperties.keyname",
+      "type": "string",
+      "enum": null,
+      "default": null,
+      "description": "The name of KeyVault key.",
+      "read_only": false
+    },
+    {
+      "property_path": "properties.encryption.keyvaultproperties.keyvaulturi",
+      "type": "string",
+      "enum": null,
+      "default": null,
+      "description": "The Uri of KeyVault.",
+      "read_only": false
+    },
+    {
+      "property_path": "properties.encryption.keyvaultproperties.keyversion",
+      "type": "string",
+      "enum": null,
+      "default": null,
+      "description": "The version of KeyVault key.",
+      "read_only": false
+    },
+    {
+      "property_path": "properties.encryption.keyvaultproperties.lastKeyRotationTimestamp",
+      "type": "string",
+      "enum": null,
+      "default": null,
+      "description": "Timestamp of last rotation of the Key Vault Key.",
+      "read_only": true
+    },
+    {
+      "property_path": "properties.encryption.requireInfrastructureEncryption",
+      "type": "boolean",
+      "enum": null,
+      "default": null,
+      "description": "A boolean indicating whether or not the service applies a secondary layer of encryption with platform managed keys for data at rest.",
+      "read_only": false
+    },
+    {
+      "property_path": "properties.encryption.services.blob.enabled",
+      "type": "boolean",
+      "enum": null,
+      "default": null,
+      "description": "A boolean indicating whether or not the service encrypts the data as it is stored. Encryption at rest is enabled by default today and cannot be disabled.",
+      "read_only": false
+    },
+    {
+      "property_path": "properties.encryption.services.blob.keyType",
+      "type": "string",
+      "enum": [
+        "Service",
+        "Account"
+      ],
+      "default": null,
+      "description": "Encryption key type to be used for the encryption service. 'Account' key type implies that an account-scoped encryption key will be used. 'Service' key type implies that a default service key is used.",
+      "read_only": false
+    },
+    {
+      "property_path": "properties.encryption.services.blob.lastEnabledTime",
+      "type": "string",
+      "enum": null,
+      "default": null,
+      "description": "Gets a rough estimate of the date/time when the encryption was last enabled by the user. Data is encrypted at rest by default today and cannot be disabled.",
+      "read_only": true
+    },
+    {
+      "property_path": "properties.encryption.services.file.enabled",
+      "type": "boolean",
+      "enum": null,
+      "default": null,
+      "description": "A boolean indicating whether or not the service encrypts the data as it is stored. Encryption at rest is enabled by default today and cannot be disabled.",
+      "read_only": false
+    },
+    {
+      "property_path": "properties.encryption.services.file.keyType",
+      "type": "string",
+      "enum": [
+        "Service",
+        "Account"
+      ],
+      "default": null,
+      "description": "Encryption key type to be used for the encryption service. 'Account' key type implies that an account-scoped encryption key will be used. 'Service' key type implies that a default service key is used.",
+      "read_only": false
+    },
+    {
+      "property_path": "properties.encryption.services.file.lastEnabledTime",
+      "type": "string",
+      "enum": null,
+      "default": null,
+      "description": "Gets a rough estimate of the date/time when the encryption was last enabled by the user. Data is encrypted at rest by default today and cannot be disabled.",
+      "read_only": true
+    },
+    {
+      "property_path": "properties.encryption.services.queue.enabled",
+      "type": "boolean",
+      "enum": null,
+      "default": null,
+      "description": "A boolean indicating whether or not the service encrypts the data as it is stored. Encryption at rest is enabled by default today and cannot be disabled.",
+      "read_only": false
+    },
+    {
+      "property_path": "properties.encryption.services.queue.keyType",
+      "type": "string",
+      "enum": [
+        "Service",
+        "Account"
+      ],
+      "default": null,
+      "description": "Encryption key type to be used for the encryption service. 'Account' key type implies that an account-scoped encryption key will be used. 'Service' key type implies that a default service key is used.",
+      "read_only": false
+    },
+    {
+      "property_path": "properties.encryption.services.queue.lastEnabledTime",
+      "type": "string",
+      "enum": null,
+      "default": null,
+      "description": "Gets a rough estimate of the date/time when the encryption was last enabled by the user. Data is encrypted at rest by default today and cannot be disabled.",
+      "read_only": true
+    },
+    {
+      "property_path": "properties.encryption.services.table.enabled",
+      "type": "boolean",
+      "enum": null,
+      "default": null,
+      "description": "A boolean indicating whether or not the service encrypts the data as it is stored. Encryption at rest is enabled by default today and cannot be disabled.",
+      "read_only": false
+    },
+    {
+      "property_path": "properties.encryption.services.table.keyType",
+      "type": "string",
+      "enum": [
+        "Service",
+        "Account"
+      ],
+      "default": null,
+      "description": "Encryption key type to be used for the encryption service. 'Account' key type implies that an account-scoped encryption key will be used. 'Service' key type implies that a default service key is used.",
+      "read_only": false
+    },
+    {
+      "property_path": "properties.encryption.services.table.lastEnabledTime",
+      "type": "string",
+      "enum": null,
+      "default": null,
+      "description": "Gets a rough estimate of the date/time when the encryption was last enabled by the user. Data is encrypted at rest by default today and cannot be disabled.",
+      "read_only": true
+    },
+    {
+      "property_path": "properties.failoverInProgress",
+      "type": "boolean",
+      "enum": null,
+      "default": null,
+      "description": "If the failover is in progress, the value will be true, otherwise, it will be null.",
+      "read_only": true
+    },
+    {
+      "property_path": "properties.geoReplicationStats.canFailover",
+      "type": "boolean",
+      "enum": null,
+      "default": null,
+      "description": "A boolean flag which indicates whether or not account failover is supported for the account.",
+      "read_only": true
+    },
+    {
+      "property_path": "properties.geoReplicationStats.canPlannedFailover",
+      "type": "boolean",
+      "enum": null,
+      "default": null,
+      "description": "A boolean flag which indicates whether or not planned account failover is supported for the account.",
+      "read_only": true
+    },
+    {
+      "property_path": "properties.geoReplicationStats.lastSyncTime",
+      "type": "string",
+      "enum": null,
+      "default": null,
+      "description": "All primary writes preceding this UTC date/time value are guaranteed to be available for read operations. Primary writes following this point in time may or may not be available for reads. Element may be default value if value of LastSyncTime is not available, this can happen if secondary is offline or we are in bootstrap.",
+      "read_only": true
+    },
+    {
+      "property_path": "properties.geoReplicationStats.postFailoverRedundancy",
+      "type": "string",
+      "enum": [
+        "Standard_LRS",
+        "Standard_ZRS"
+      ],
+      "default": null,
+      "description": "The redundancy type of the account after an account failover is performed.",
+      "read_only": true
+    },
+    {
+      "property_path": "properties.geoReplicationStats.postPlannedFailoverRedundancy",
+      "type": "string",
+      "enum": [
+        "Standard_GRS",
+        "Standard_GZRS",
+        "Standard_RAGRS",
+        "Standard_RAGZRS"
+      ],
+      "default": null,
+      "description": "The redundancy type of the account after a planned account failover is performed.",
+      "read_only": true
+    },
+    {
+      "property_path": "properties.geoReplicationStats.status",
+      "type": "string",
+      "enum": [
+        "Live",
+        "Bootstrap",
+        "Unavailable"
+      ],
+      "default": null,
+      "description": "The status of the secondary location. Possible values are: - Live: Indicates that the secondary location is active and operational. - Bootstrap: Indicates initial synchronization from the primary location to the secondary location is in progress.This typically occurs when replication is first enabled. - Unavailable: Indicates that the secondary location is temporarily unavailable.",
+      "read_only": true
+    },
+    {
+      "property_path": "properties.immutableStorageWithVersioning.enabled",
+      "type": "boolean",
+      "enum": null,
+      "default": null,
+      "description": "A boolean flag which enables account-level immutability. All the containers under such an account have object-level immutability enabled by default.",
+      "read_only": false
+    },
+    {
+      "property_path": "properties.immutableStorageWithVersioning.immutabilityPolicy.allowProtectedAppendWrites",
+      "type": "boolean",
+      "enum": null,
+      "default": null,
+      "description": "This property can only be changed for disabled and unlocked time-based retention policies. When enabled, new blocks can be written to an append blob while maintaining immutability protection and compliance. Only new blocks can be added and any existing blocks cannot be modified or deleted.",
+      "read_only": false
+    },
+    {
+      "property_path": "properties.immutableStorageWithVersioning.immutabilityPolicy.immutabilityPeriodSinceCreationInDays",
+      "type": "integer",
+      "enum": null,
+      "default": null,
+      "description": "The immutability period for the blobs in the container since the policy creation, in days.",
+      "read_only": false
+    },
+    {
+      "property_path": "properties.immutableStorageWithVersioning.immutabilityPolicy.state",
+      "type": "string",
+      "enum": [
+        "Unlocked",
+        "Locked",
+        "Disabled"
+      ],
+      "default": null,
+      "description": "The ImmutabilityPolicy state defines the mode of the policy. Disabled state disables the policy, Unlocked state allows increase and decrease of immutability retention time and also allows toggling allowProtectedAppendWrites property, Locked state only allows the increase of the immutability retention time. A policy can only be created in a Disabled or Unlocked state and can be toggled between the two states. Only a policy in an Unlocked state can transition to a Locked state which cannot be reverted.",
+      "read_only": false
+    },
+    {
+      "property_path": "properties.isHnsEnabled",
+      "type": "boolean",
+      "enum": null,
+      "default": null,
+      "description": "Account HierarchicalNamespace enabled if sets to true.",
+      "read_only": false
+    },
+    {
+      "property_path": "properties.isLocalUserEnabled",
+      "type": "boolean",
+      "enum": null,
+      "default": null,
+      "description": "Enables local users feature, if set to true",
+      "read_only": false
+    },
+    {
+      "property_path": "properties.isNfsV3Enabled",
+      "type": "boolean",
+      "enum": null,
+      "default": null,
+      "description": "NFS 3.0 protocol support enabled if set to true.",
+      "read_only": false
+    },
+    {
+      "property_path": "properties.isSftpEnabled",
+      "type": "boolean",
+      "enum": null,
+      "default": null,
+      "description": "Enables Secure File Transfer Protocol, if set to true",
+      "read_only": false
+    },
+    {
+      "property_path": "properties.isSkuConversionBlocked",
+      "type": "boolean",
+      "enum": null,
+      "default": null,
+      "description": "This property will be set to true or false on an event of ongoing migration. Default value is null.",
+      "read_only": true
+    },
+    {
+      "property_path": "properties.keyCreationTime.key1",
+      "type": "string",
+      "enum": null,
+      "default": null,
+      "description": "",
+      "read_only": false
+    },
+    {
+      "property_path": "properties.keyCreationTime.key2",
+      "type": "string",
+      "enum": null,
+      "default": null,
+      "description": "",
+      "read_only": false
+    },
+    {
+      "property_path": "properties.keyPolicy.keyExpirationPeriodInDays",
+      "type": "integer",
+      "enum": null,
+      "default": null,
+      "description": "The key expiration period in days.",
+      "read_only": false
+    },
+    {
+      "property_path": "properties.largeFileSharesState",
+      "type": "string",
+      "enum": [
+        "Disabled",
+        "Enabled"
+      ],
+      "default": null,
+      "description": "Allow large file shares if sets to Enabled. It cannot be disabled once it is enabled.",
+      "read_only": false
+    },
+    {
+      "property_path": "properties.lastGeoFailoverTime",
+      "type": "string",
+      "enum": null,
+      "default": null,
+      "description": "Gets the timestamp of the most recent instance of a failover to the secondary location. Only the most recent timestamp is retained. This element is not returned if there has never been a failover instance. Only available if the accountType is Standard_GRS or Standard_RAGRS.",
+      "read_only": true
+    },
+    {
+      "property_path": "properties.minimumTlsVersion",
+      "type": "string",
+      "enum": [
+        "TLS1_0",
+        "TLS1_1",
+        "TLS1_2",
+        "TLS1_3"
+      ],
+      "default": null,
+      "description": "Set the minimum TLS version to be permitted on requests to storage. The default interpretation is TLS 1.0 for this property. Minimum TLS version 1.3 version is not supported.",
+      "read_only": false
+    },
+    {
+      "property_path": "properties.networkAcls.bypass",
+      "type": "string",
+      "enum": [
+        "None",
+        "Logging",
+        "Metrics",
+        "AzureServices"
+      ],
+      "default": "AzureServices",
+      "description": "Specifies whether traffic is bypassed for Logging/Metrics/AzureServices. Possible values are any combination of Logging|Metrics|AzureServices (For example, \"Logging, Metrics\"), or None to bypass none of those traffics.",
+      "read_only": false
+    },
+    {
+      "property_path": "properties.networkAcls.defaultAction",
+      "type": "string",
+      "enum": [
+        "Allow",
+        "Deny"
+      ],
+      "default": "Allow",
+      "description": "Specifies the default action of allow or deny when no other rules match.",
+      "read_only": false
+    },
+    {
+      "property_path": "properties.networkAcls.ipRules[].action",
+      "type": "string",
+      "enum": [
+        "Allow"
+      ],
+      "default": "Allow",
+      "description": "The action of IP ACL rule.",
+      "read_only": false
+    },
+    {
+      "property_path": "properties.networkAcls.ipRules[].value",
+      "type": "string",
+      "enum": null,
+      "default": null,
+      "description": "Specifies the IP or IP range in CIDR format.",
+      "read_only": false
+    },
+    {
+      "property_path": "properties.networkAcls.ipv6Rules[].action",
+      "type": "string",
+      "enum": [
+        "Allow"
+      ],
+      "default": "Allow",
+      "description": "The action of IP ACL rule.",
+      "read_only": false
+    },
+    {
+      "property_path": "properties.networkAcls.ipv6Rules[].value",
+      "type": "string",
+      "enum": null,
+      "default": null,
+      "description": "Specifies the IP or IP range in CIDR format.",
+      "read_only": false
+    },
+    {
+      "property_path": "properties.networkAcls.resourceAccessRules[].resourceId",
+      "type": "string",
+      "enum": null,
+      "default": null,
+      "description": "Resource Id",
+      "read_only": false
+    },
+    {
+      "property_path": "properties.networkAcls.resourceAccessRules[].tenantId",
+      "type": "string",
+      "enum": null,
+      "default": null,
+      "description": "Tenant Id",
+      "read_only": false
+    },
+    {
+      "property_path": "properties.networkAcls.virtualNetworkRules[].action",
+      "type": "string",
+      "enum": [
+        "Allow"
+      ],
+      "default": "Allow",
+      "description": "The action of virtual network rule.",
+      "read_only": false
+    },
+    {
+      "property_path": "properties.networkAcls.virtualNetworkRules[].id",
+      "type": "string",
+      "enum": null,
+      "default": null,
+      "description": "Resource ID of a subnet, for example: /subscriptions/{subscriptionId}/resourceGroups/{groupName}/providers/Microsoft.Network/virtualNetworks/{vnetName}/subnets/{subnetName}.",
+      "read_only": false
+    },
+    {
+      "property_path": "properties.networkAcls.virtualNetworkRules[].state",
+      "type": "string",
+      "enum": [
+        "Provisioning",
+        "Deprovisioning",
+        "Succeeded",
+        "Failed",
+        "NetworkSourceDeleted"
+      ],
+      "default": null,
+      "description": "Gets the state of virtual network rule.",
+      "read_only": false
+    },
+    {
+      "property_path": "properties.primaryEndpoints.blob",
+      "type": "string",
+      "enum": null,
+      "default": null,
+      "description": "Gets the blob endpoint.",
+      "read_only": true
+    },
+    {
+      "property_path": "properties.primaryEndpoints.dfs",
+      "type": "string",
+      "enum": null,
+      "default": null,
+      "description": "Gets the dfs endpoint.",
+      "read_only": true
+    },
+    {
+      "property_path": "properties.primaryEndpoints.file",
+      "type": "string",
+      "enum": null,
+      "default": null,
+      "description": "Gets the file endpoint.",
+      "read_only": true
+    },
+    {
+      "property_path": "properties.primaryEndpoints.internetEndpoints.blob",
+      "type": "string",
+      "enum": null,
+      "default": null,
+      "description": "Gets the blob endpoint.",
+      "read_only": true
+    },
+    {
+      "property_path": "properties.primaryEndpoints.internetEndpoints.dfs",
+      "type": "string",
+      "enum": null,
+      "default": null,
+      "description": "Gets the dfs endpoint.",
+      "read_only": true
+    },
+    {
+      "property_path": "properties.primaryEndpoints.internetEndpoints.file",
+      "type": "string",
+      "enum": null,
+      "default": null,
+      "description": "Gets the file endpoint.",
+      "read_only": true
+    },
+    {
+      "property_path": "properties.primaryEndpoints.internetEndpoints.web",
+      "type": "string",
+      "enum": null,
+      "default": null,
+      "description": "Gets the web endpoint.",
+      "read_only": true
+    },
+    {
+      "property_path": "properties.primaryEndpoints.ipv6Endpoints.blob",
+      "type": "string",
+      "enum": null,
+      "default": null,
+      "description": "Gets the blob endpoint.",
+      "read_only": true
+    },
+    {
+      "property_path": "properties.primaryEndpoints.ipv6Endpoints.dfs",
+      "type": "string",
+      "enum": null,
+      "default": null,
+      "description": "Gets the dfs endpoint.",
+      "read_only": true
+    },
+    {
+      "property_path": "properties.primaryEndpoints.ipv6Endpoints.file",
+      "type": "string",
+      "enum": null,
+      "default": null,
+      "description": "Gets the file endpoint.",
+      "read_only": true
+    },
+    {
+      "property_path": "properties.primaryEndpoints.ipv6Endpoints.internetEndpoints.blob",
+      "type": "string",
+      "enum": null,
+      "default": null,
+      "description": "Gets the blob endpoint.",
+      "read_only": true
+    },
+    {
+      "property_path": "properties.primaryEndpoints.ipv6Endpoints.internetEndpoints.dfs",
+      "type": "string",
+      "enum": null,
+      "default": null,
+      "description": "Gets the dfs endpoint.",
+      "read_only": true
+    },
+    {
+      "property_path": "properties.primaryEndpoints.ipv6Endpoints.internetEndpoints.file",
+      "type": "string",
+      "enum": null,
+      "default": null,
+      "description": "Gets the file endpoint.",
+      "read_only": true
+    },
+    {
+      "property_path": "properties.primaryEndpoints.ipv6Endpoints.internetEndpoints.web",
+      "type": "string",
+      "enum": null,
+      "default": null,
+      "description": "Gets the web endpoint.",
+      "read_only": true
+    },
+    {
+      "property_path": "properties.primaryEndpoints.ipv6Endpoints.microsoftEndpoints.blob",
+      "type": "string",
+      "enum": null,
+      "default": null,
+      "description": "Gets the blob endpoint.",
+      "read_only": true
+    },
+    {
+      "property_path": "properties.primaryEndpoints.ipv6Endpoints.microsoftEndpoints.dfs",
+      "type": "string",
+      "enum": null,
+      "default": null,
+      "description": "Gets the dfs endpoint.",
+      "read_only": true
+    },
+    {
+      "property_path": "properties.primaryEndpoints.ipv6Endpoints.microsoftEndpoints.file",
+      "type": "string",
+      "enum": null,
+      "default": null,
+      "description": "Gets the file endpoint.",
+      "read_only": true
+    },
+    {
+      "property_path": "properties.primaryEndpoints.ipv6Endpoints.microsoftEndpoints.queue",
+      "type": "string",
+      "enum": null,
+      "default": null,
+      "description": "Gets the queue endpoint.",
+      "read_only": true
+    },
+    {
+      "property_path": "properties.primaryEndpoints.ipv6Endpoints.microsoftEndpoints.table",
+      "type": "string",
+      "enum": null,
+      "default": null,
+      "description": "Gets the table endpoint.",
+      "read_only": true
+    },
+    {
+      "property_path": "properties.primaryEndpoints.ipv6Endpoints.microsoftEndpoints.web",
+      "type": "string",
+      "enum": null,
+      "default": null,
+      "description": "Gets the web endpoint.",
+      "read_only": true
+    },
+    {
+      "property_path": "properties.primaryEndpoints.ipv6Endpoints.queue",
+      "type": "string",
+      "enum": null,
+      "default": null,
+      "description": "Gets the queue endpoint.",
+      "read_only": true
+    },
+    {
+      "property_path": "properties.primaryEndpoints.ipv6Endpoints.table",
+      "type": "string",
+      "enum": null,
+      "default": null,
+      "description": "Gets the table endpoint.",
+      "read_only": true
+    },
+    {
+      "property_path": "properties.primaryEndpoints.ipv6Endpoints.web",
+      "type": "string",
+      "enum": null,
+      "default": null,
+      "description": "Gets the web endpoint.",
+      "read_only": true
+    },
+    {
+      "property_path": "properties.primaryEndpoints.microsoftEndpoints.blob",
+      "type": "string",
+      "enum": null,
+      "default": null,
+      "description": "Gets the blob endpoint.",
+      "read_only": true
+    },
+    {
+      "property_path": "properties.primaryEndpoints.microsoftEndpoints.dfs",
+      "type": "string",
+      "enum": null,
+      "default": null,
+      "description": "Gets the dfs endpoint.",
+      "read_only": true
+    },
+    {
+      "property_path": "properties.primaryEndpoints.microsoftEndpoints.file",
+      "type": "string",
+      "enum": null,
+      "default": null,
+      "description": "Gets the file endpoint.",
+      "read_only": true
+    },
+    {
+      "property_path": "properties.primaryEndpoints.microsoftEndpoints.queue",
+      "type": "string",
+      "enum": null,
+      "default": null,
+      "description": "Gets the queue endpoint.",
+      "read_only": true
+    },
+    {
+      "property_path": "properties.primaryEndpoints.microsoftEndpoints.table",
+      "type": "string",
+      "enum": null,
+      "default": null,
+      "description": "Gets the table endpoint.",
+      "read_only": true
+    },
+    {
+      "property_path": "properties.primaryEndpoints.microsoftEndpoints.web",
+      "type": "string",
+      "enum": null,
+      "default": null,
+      "description": "Gets the web endpoint.",
+      "read_only": true
+    },
+    {
+      "property_path": "properties.primaryEndpoints.queue",
+      "type": "string",
+      "enum": null,
+      "default": null,
+      "description": "Gets the queue endpoint.",
+      "read_only": true
+    },
+    {
+      "property_path": "properties.primaryEndpoints.table",
+      "type": "string",
+      "enum": null,
+      "default": null,
+      "description": "Gets the table endpoint.",
+      "read_only": true
+    },
+    {
+      "property_path": "properties.primaryEndpoints.web",
+      "type": "string",
+      "enum": null,
+      "default": null,
+      "description": "Gets the web endpoint.",
+      "read_only": true
+    },
+    {
+      "property_path": "properties.primaryLocation",
+      "type": "string",
+      "enum": null,
+      "default": null,
+      "description": "Gets the location of the primary data center for the storage account.",
+      "read_only": true
+    },
+    {
+      "property_path": "properties.privateEndpointConnections[]",
+      "type": "object",
+      "enum": null,
+      "default": null,
+      "description": "(unresolved cross-file $ref: PrivateEndpointConnection)",
+      "read_only": false
+    },
+    {
+      "property_path": "properties.provisioningState",
+      "type": "string",
+      "enum": [
+        "Creating",
+        "ResolvingDNS",
+        "Succeeded"
+      ],
+      "default": null,
+      "description": "Gets the status of the storage account at the time the operation was called.",
+      "read_only": true
+    },
+    {
+      "property_path": "properties.publicNetworkAccess",
+      "type": "string",
+      "enum": [
+        "Enabled",
+        "Disabled",
+        "SecuredByPerimeter"
+      ],
+      "default": null,
+      "description": "Allow, disallow, or let Network Security Perimeter configuration to evaluate public network access to Storage Account. Value is optional but if passed in, must be 'Enabled', 'Disabled' or 'SecuredByPerimeter'.",
+      "read_only": false
+    },
+    {
+      "property_path": "properties.routingPreference.publishInternetEndpoints",
+      "type": "boolean",
+      "enum": null,
+      "default": null,
+      "description": "A boolean flag which indicates whether internet routing storage endpoints are to be published",
+      "read_only": false
+    },
+    {
+      "property_path": "properties.routingPreference.publishMicrosoftEndpoints",
+      "type": "boolean",
+      "enum": null,
+      "default": null,
+      "description": "A boolean flag which indicates whether microsoft routing storage endpoints are to be published",
+      "read_only": false
+    },
+    {
+      "property_path": "properties.routingPreference.routingChoice",
+      "type": "string",
+      "enum": [
+        "MicrosoftRouting",
+        "InternetRouting"
+      ],
+      "default": null,
+      "description": "Routing Choice defines the kind of network routing opted by the user.",
+      "read_only": false
+    },
+    {
+      "property_path": "properties.sasPolicy.expirationAction",
+      "type": "string",
+      "enum": [
+        "Log",
+        "Block"
+      ],
+      "default": "Log",
+      "description": "The SAS Expiration Action defines the action to be performed when sasPolicy.sasExpirationPeriod is violated. The 'Log' action can be used for audit purposes and the 'Block' action can be used to block and deny the usage of SAS tokens that do not adhere to the sas policy expiration period.",
+      "read_only": false
+    },
+    {
+      "property_path": "properties.sasPolicy.sasExpirationPeriod",
+      "type": "string",
+      "enum": null,
+      "default": null,
+      "description": "The SAS expiration period, DD.HH:MM:SS.",
+      "read_only": false
+    },
+    {
+      "property_path": "properties.secondaryEndpoints.blob",
+      "type": "string",
+      "enum": null,
+      "default": null,
+      "description": "Gets the blob endpoint.",
+      "read_only": true
+    },
+    {
+      "property_path": "properties.secondaryEndpoints.dfs",
+      "type": "string",
+      "enum": null,
+      "default": null,
+      "description": "Gets the dfs endpoint.",
+      "read_only": true
+    },
+    {
+      "property_path": "properties.secondaryEndpoints.file",
+      "type": "string",
+      "enum": null,
+      "default": null,
+      "description": "Gets the file endpoint.",
+      "read_only": true
+    },
+    {
+      "property_path": "properties.secondaryEndpoints.internetEndpoints.blob",
+      "type": "string",
+      "enum": null,
+      "default": null,
+      "description": "Gets the blob endpoint.",
+      "read_only": true
+    },
+    {
+      "property_path": "properties.secondaryEndpoints.internetEndpoints.dfs",
+      "type": "string",
+      "enum": null,
+      "default": null,
+      "description": "Gets the dfs endpoint.",
+      "read_only": true
+    },
+    {
+      "property_path": "properties.secondaryEndpoints.internetEndpoints.file",
+      "type": "string",
+      "enum": null,
+      "default": null,
+      "description": "Gets the file endpoint.",
+      "read_only": true
+    },
+    {
+      "property_path": "properties.secondaryEndpoints.internetEndpoints.web",
+      "type": "string",
+      "enum": null,
+      "default": null,
+      "description": "Gets the web endpoint.",
+      "read_only": true
+    },
+    {
+      "property_path": "properties.secondaryEndpoints.ipv6Endpoints.blob",
+      "type": "string",
+      "enum": null,
+      "default": null,
+      "description": "Gets the blob endpoint.",
+      "read_only": true
+    },
+    {
+      "property_path": "properties.secondaryEndpoints.ipv6Endpoints.dfs",
+      "type": "string",
+      "enum": null,
+      "default": null,
+      "description": "Gets the dfs endpoint.",
+      "read_only": true
+    },
+    {
+      "property_path": "properties.secondaryEndpoints.ipv6Endpoints.file",
+      "type": "string",
+      "enum": null,
+      "default": null,
+      "description": "Gets the file endpoint.",
+      "read_only": true
+    },
+    {
+      "property_path": "properties.secondaryEndpoints.ipv6Endpoints.internetEndpoints.blob",
+      "type": "string",
+      "enum": null,
+      "default": null,
+      "description": "Gets the blob endpoint.",
+      "read_only": true
+    },
+    {
+      "property_path": "properties.secondaryEndpoints.ipv6Endpoints.internetEndpoints.dfs",
+      "type": "string",
+      "enum": null,
+      "default": null,
+      "description": "Gets the dfs endpoint.",
+      "read_only": true
+    },
+    {
+      "property_path": "properties.secondaryEndpoints.ipv6Endpoints.internetEndpoints.file",
+      "type": "string",
+      "enum": null,
+      "default": null,
+      "description": "Gets the file endpoint.",
+      "read_only": true
+    },
+    {
+      "property_path": "properties.secondaryEndpoints.ipv6Endpoints.internetEndpoints.web",
+      "type": "string",
+      "enum": null,
+      "default": null,
+      "description": "Gets the web endpoint.",
+      "read_only": true
+    },
+    {
+      "property_path": "properties.secondaryEndpoints.ipv6Endpoints.microsoftEndpoints.blob",
+      "type": "string",
+      "enum": null,
+      "default": null,
+      "description": "Gets the blob endpoint.",
+      "read_only": true
+    },
+    {
+      "property_path": "properties.secondaryEndpoints.ipv6Endpoints.microsoftEndpoints.dfs",
+      "type": "string",
+      "enum": null,
+      "default": null,
+      "description": "Gets the dfs endpoint.",
+      "read_only": true
+    },
+    {
+      "property_path": "properties.secondaryEndpoints.ipv6Endpoints.microsoftEndpoints.file",
+      "type": "string",
+      "enum": null,
+      "default": null,
+      "description": "Gets the file endpoint.",
+      "read_only": true
+    },
+    {
+      "property_path": "properties.secondaryEndpoints.ipv6Endpoints.microsoftEndpoints.queue",
+      "type": "string",
+      "enum": null,
+      "default": null,
+      "description": "Gets the queue endpoint.",
+      "read_only": true
+    },
+    {
+      "property_path": "properties.secondaryEndpoints.ipv6Endpoints.microsoftEndpoints.table",
+      "type": "string",
+      "enum": null,
+      "default": null,
+      "description": "Gets the table endpoint.",
+      "read_only": true
+    },
+    {
+      "property_path": "properties.secondaryEndpoints.ipv6Endpoints.microsoftEndpoints.web",
+      "type": "string",
+      "enum": null,
+      "default": null,
+      "description": "Gets the web endpoint.",
+      "read_only": true
+    },
+    {
+      "property_path": "properties.secondaryEndpoints.ipv6Endpoints.queue",
+      "type": "string",
+      "enum": null,
+      "default": null,
+      "description": "Gets the queue endpoint.",
+      "read_only": true
+    },
+    {
+      "property_path": "properties.secondaryEndpoints.ipv6Endpoints.table",
+      "type": "string",
+      "enum": null,
+      "default": null,
+      "description": "Gets the table endpoint.",
+      "read_only": true
+    },
+    {
+      "property_path": "properties.secondaryEndpoints.ipv6Endpoints.web",
+      "type": "string",
+      "enum": null,
+      "default": null,
+      "description": "Gets the web endpoint.",
+      "read_only": true
+    },
+    {
+      "property_path": "properties.secondaryEndpoints.microsoftEndpoints.blob",
+      "type": "string",
+      "enum": null,
+      "default": null,
+      "description": "Gets the blob endpoint.",
+      "read_only": true
+    },
+    {
+      "property_path": "properties.secondaryEndpoints.microsoftEndpoints.dfs",
+      "type": "string",
+      "enum": null,
+      "default": null,
+      "description": "Gets the dfs endpoint.",
+      "read_only": true
+    },
+    {
+      "property_path": "properties.secondaryEndpoints.microsoftEndpoints.file",
+      "type": "string",
+      "enum": null,
+      "default": null,
+      "description": "Gets the file endpoint.",
+      "read_only": true
+    },
+    {
+      "property_path": "properties.secondaryEndpoints.microsoftEndpoints.queue",
+      "type": "string",
+      "enum": null,
+      "default": null,
+      "description": "Gets the queue endpoint.",
+      "read_only": true
+    },
+    {
+      "property_path": "properties.secondaryEndpoints.microsoftEndpoints.table",
+      "type": "string",
+      "enum": null,
+      "default": null,
+      "description": "Gets the table endpoint.",
+      "read_only": true
+    },
+    {
+      "property_path": "properties.secondaryEndpoints.microsoftEndpoints.web",
+      "type": "string",
+      "enum": null,
+      "default": null,
+      "description": "Gets the web endpoint.",
+      "read_only": true
+    },
+    {
+      "property_path": "properties.secondaryEndpoints.queue",
+      "type": "string",
+      "enum": null,
+      "default": null,
+      "description": "Gets the queue endpoint.",
+      "read_only": true
+    },
+    {
+      "property_path": "properties.secondaryEndpoints.table",
+      "type": "string",
+      "enum": null,
+      "default": null,
+      "description": "Gets the table endpoint.",
+      "read_only": true
+    },
+    {
+      "property_path": "properties.secondaryEndpoints.web",
+      "type": "string",
+      "enum": null,
+      "default": null,
+      "description": "Gets the web endpoint.",
+      "read_only": true
+    },
+    {
+      "property_path": "properties.secondaryLocation",
+      "type": "string",
+      "enum": null,
+      "default": null,
+      "description": "Gets the location of the geo-replicated secondary for the storage account. Only available if the accountType is Standard_GRS or Standard_RAGRS.",
+      "read_only": true
+    },
+    {
+      "property_path": "properties.statusOfPrimary",
+      "type": "string",
+      "enum": [
+        "available",
+        "unavailable"
+      ],
+      "default": null,
+      "description": "Gets the status indicating whether the primary location of the storage account is available or unavailable.",
+      "read_only": true
+    },
+    {
+      "property_path": "properties.statusOfSecondary",
+      "type": "string",
+      "enum": [
+        "available",
+        "unavailable"
+      ],
+      "default": null,
+      "description": "Gets the status indicating whether the secondary location of the storage account is available or unavailable. Only available if the SKU name is Standard_GRS or Standard_RAGRS.",
+      "read_only": true
+    },
+    {
+      "property_path": "properties.storageAccountSkuConversionStatus.endTime",
+      "type": "string",
+      "enum": null,
+      "default": null,
+      "description": "This property represents the sku conversion end time.",
+      "read_only": true
+    },
+    {
+      "property_path": "properties.storageAccountSkuConversionStatus.skuConversionStatus",
+      "type": "string",
+      "enum": [
+        "InProgress",
+        "Succeeded",
+        "Failed"
+      ],
+      "default": null,
+      "description": "This property indicates the current sku conversion status.",
+      "read_only": true
+    },
+    {
+      "property_path": "properties.storageAccountSkuConversionStatus.startTime",
+      "type": "string",
+      "enum": null,
+      "default": null,
+      "description": "This property represents the sku conversion start time.",
+      "read_only": true
+    },
+    {
+      "property_path": "properties.storageAccountSkuConversionStatus.targetSkuName",
+      "type": "object",
+      "enum": null,
+      "default": null,
+      "description": "(unresolved cross-file $ref: SkuName)",
+      "read_only": false
+    },
+    {
+      "property_path": "properties.supportsHttpsTrafficOnly",
+      "type": "boolean",
+      "enum": null,
+      "default": null,
+      "description": "Allows https traffic only to storage service if sets to true.",
+      "read_only": false
+    }
+  ]
+}
