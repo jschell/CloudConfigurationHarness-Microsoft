@@ -19,7 +19,7 @@ states:
     next_on_failure: end
 
   - name: rule_compile
-    role: executor_claude
+    role: executor_glm
     reads: [hypotheses]
     writes: [rules]
     prompt_template: harness/workflows/prompts/rule_compile.md
@@ -28,7 +28,7 @@ states:
     next_on_failure: end
 
   - name: fixture_generate
-    role: executor_claude
+    role: executor_glm
     reads: [rules]
     writes: [fixtures]
     prompt_template: harness/workflows/prompts/fixture_generate.md
