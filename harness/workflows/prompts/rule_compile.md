@@ -48,6 +48,29 @@ strictly binary (e.g. `networkAcls.defaultAction` only has `Allow`/
 `Deny`) since there's nothing else it could be. Full writeup:
 `docs/patterns/rego-rule-authoring.md`.
 
+**If the target hypothesis's `property_conditions` field is non-null**
+(a Tier 2 / combination hypothesis -- `tier` will be 2), it is a JSON
+list of `{property_path, risky_value, safe_value}` objects. The rule
+must deny only when ALL conditions are in their risky state
+simultaneously (a plain Rego rule body is an implicit AND across its
+statements, so this is just one condition per property, same syntax
+as a Tier 1 rule):
+
+    deny contains msg if {
+        some resource in input.resources
+        resource.type == "<hypothesis resource_type>"
+        resource.properties.<condition 1 property> == "<condition 1 risky_value>"
+        resource.properties.<condition 2 property> == "<condition 2 risky_value>"
+        msg := "..."
+    }
+
+Do not use `!=`/negation tricks to combine conditions unless a
+specific condition's own semantics call for it (same guidance as
+single-property rules -- see docs/patterns/rego-rule-authoring.md).
+Every condition must be explicit; the rule must NOT fire when only
+some (not all) of the conditions are risky -- that's what the "mixed"
+fixture variants (see fixture_generate.md) exist to prove.
+
 Do NOT invent a check_id or rule_path yourself, and don't include them in
 your reply -- the harness assigns the check_id deterministically (see
 `docs/patterns/deterministic-check-id-assignment.md`). Each call to you is
