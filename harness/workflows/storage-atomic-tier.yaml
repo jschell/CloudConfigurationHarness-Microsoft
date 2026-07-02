@@ -14,6 +14,7 @@
 workflow: storage-atomic-tier
 resource_config:
   resource_type: Microsoft.Storage/storageAccounts
+  tier: 1
   check_id_prefix: AZ-STOR
   rules_dir: rules/azure/storage
   fixtures_dir: fixtures/azure/storage

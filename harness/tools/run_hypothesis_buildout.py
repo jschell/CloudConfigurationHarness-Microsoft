@@ -41,15 +41,15 @@ MAX_ATTEMPTS = 3
 RETRY_BACKOFF_SECONDS = 15
 
 
-def remaining_hypothesis_ids(conn, resource_type: str) -> list[int]:
+def remaining_hypothesis_ids(conn, resource_type: str, tier: int) -> list[int]:
     compiled = {
         r["hypothesis_id"] for r in conn.execute("SELECT hypothesis_id FROM rules")
     }
     return [
         r["id"]
         for r in conn.execute(
-            "SELECT id FROM hypotheses WHERE resource_type = ? ORDER BY id",
-            (resource_type,),
+            "SELECT id FROM hypotheses WHERE resource_type = ? AND tier = ? ORDER BY id",
+            (resource_type, tier),
         ).fetchall()
         if r["id"] not in compiled
     ]
@@ -62,11 +62,15 @@ def run(
 ) -> dict[int, str]:
     workflow = load_workflow(workflow_path)
     resource_type = workflow["resource_config"]["resource_type"]
+    tier = workflow["resource_config"]["tier"]
 
     runner = Runner(db_path=db_path, role_override=role_override or {})
     conn = runner.conn
-    ids = remaining_hypothesis_ids(conn, resource_type)
-    print(f"{len(ids)} hypotheses remaining to compile for {resource_type}: {ids}")
+    ids = remaining_hypothesis_ids(conn, resource_type, tier)
+    print(
+        f"{len(ids)} tier-{tier} hypotheses remaining to compile for "
+        f"{resource_type}: {ids}"
+    )
 
     results: dict[int, str] = {}
     for hypothesis_id in ids:
