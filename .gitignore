@@ -6,3 +6,4 @@ fixtures/**/vulnerable.json
 fixtures/**/safe.json
 .venv/
 .ruff_cache/
+.worktrees/
