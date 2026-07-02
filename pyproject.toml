@@ -15,6 +15,7 @@ dev = [
 
 [tool.ruff]
 line-length = 88
+exclude = [".claude/skills"]  # vendored reference material, not code this project maintains
 
 [tool.pyright]
 include = ["harness"]
