@@ -21,8 +21,12 @@ each prompt template must produce):
                         enumerated property list the prompt was given --
                         NOT just the security-relevant ones.
     rule_compile    -> {"hypothesis_id", "rego_content"}
-    fixture_generate-> {"vulnerable_bicep", "safe_bicep",
+    fixture_generate-> {"variants": [{"label", "expected_verdict", "bicep"}, ...],
                          "ground_truth_method", "ground_truth_ref"}
+                        Tier 1 hypotheses produce exactly two variants
+                        ("vulnerable"/fail, "safe"/pass); Tier 2 hypotheses
+                        (multiple property_conditions) produce one variant
+                        per combination worth covering.
 
 check_id/rule_path/fixture_dir are deliberately NOT part of either
 output schema and are never read from the model even if present --
@@ -319,8 +323,20 @@ def fixture_generate(
     fixture_dir = REPO_ROOT / fixture_path
     fixture_dir.mkdir(parents=True, exist_ok=True)
 
-    (fixture_dir / "vulnerable.bicep").write_text(parsed["vulnerable_bicep"])
-    (fixture_dir / "safe.bicep").write_text(parsed["safe_bicep"])
+    # variants: [{"label", "expected_verdict", "bicep"}, ...]. Tier 1
+    # hypotheses produce the same two variants ("vulnerable"/fail,
+    # "safe"/pass) that used to be hardcoded here; Tier 2 hypotheses can
+    # produce more, one per property_conditions combination.
+    variants = parsed["variants"]
+    for variant in variants:
+        (fixture_dir / f"{variant['label']}.bicep").write_text(variant["bicep"])
+    variants_json = json.dumps(
+        [
+            {"label": v["label"], "expected_verdict": v["expected_verdict"]}
+            for v in variants
+        ]
+    )
+    bicep_files_json = json.dumps({v["label"]: v["bicep"] for v in variants})
 
     existing = conn.execute(
         "SELECT id FROM fixtures WHERE check_id = ?", (check_id,)
@@ -328,10 +344,11 @@ def fixture_generate(
     if existing:
         fixture_id = existing["id"]
         conn.execute(
-            "UPDATE fixtures SET fixture_path = ?, ground_truth_method = ?, ground_truth_ref = ? "
-            "WHERE id = ?",
+            "UPDATE fixtures SET fixture_path = ?, variants_json = ?, "
+            "ground_truth_method = ?, ground_truth_ref = ? WHERE id = ?",
             (
                 fixture_path,
+                variants_json,
                 parsed["ground_truth_method"],
                 parsed.get("ground_truth_ref"),
                 fixture_id,
@@ -339,28 +356,41 @@ def fixture_generate(
         )
     else:
         cur = conn.execute(
-            "INSERT INTO fixtures (check_id, fixture_path, ground_truth_method, ground_truth_ref) "
-            "VALUES (?, ?, ?, ?)",
+            "INSERT INTO fixtures (check_id, fixture_path, variants_json, "
+            "ground_truth_method, ground_truth_ref) VALUES (?, ?, ?, ?, ?)",
             (
                 check_id,
                 fixture_path,
+                variants_json,
                 parsed["ground_truth_method"],
                 parsed.get("ground_truth_ref"),
             ),
         )
         fixture_id = cur.lastrowid
     # Append-only, unlike the `fixtures` row above -- see schema.sql and
-    # the matching note in rule_compile().
+    # the matching note in rule_compile(). vulnerable_bicep/safe_bicep stay
+    # populated (first fail/pass variant) for backward compat with rows
+    # written before variants existed; variants_json/bicep_files_json are
+    # authoritative going forward.
+    first_fail = next(
+        (v["bicep"] for v in variants if v["expected_verdict"] == "fail"), ""
+    )
+    first_pass = next(
+        (v["bicep"] for v in variants if v["expected_verdict"] == "pass"), ""
+    )
     conn.execute(
         "INSERT INTO fixture_history "
         "(workflow_run_id, check_id, fixture_path, vulnerable_bicep, safe_bicep, "
-        "ground_truth_method, ground_truth_ref) VALUES (?, ?, ?, ?, ?, ?, ?)",
+        "variants_json, bicep_files_json, ground_truth_method, ground_truth_ref) "
+        "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
         (
             context.get("_workflow_run_id"),
             check_id,
             fixture_path,
-            parsed["vulnerable_bicep"],
-            parsed["safe_bicep"],
+            first_fail,
+            first_pass,
+            variants_json,
+            bicep_files_json,
             parsed["ground_truth_method"],
             parsed.get("ground_truth_ref"),
         ),
@@ -374,8 +404,9 @@ def fixture_generate(
 def fixture_validate(
     conn: sqlite3.Connection, state: dict[str, Any], context: dict[str, Any]
 ) -> bool:
-    """Deterministic adapter state: no LLM. Compiles both fixtures to JSON
-    and runs the Rego adapter against each, writing two `runs` rows."""
+    """Deterministic adapter state: no LLM. Compiles every fixture variant
+    to JSON and runs the Rego adapter against each, writing one `runs` row
+    per variant (two for Tier 1, more for Tier 2 combinations)."""
     check_id = context["check_id"]
     fixture_row = conn.execute(
         "SELECT * FROM fixtures WHERE check_id = ?", (check_id,)
@@ -387,7 +418,19 @@ def fixture_validate(
     fixture_dir = REPO_ROOT / fixture_row["fixture_path"]
     policy_dir = (REPO_ROOT / rule_row["rule_path"]).parent
 
-    for label, expected_verdict in (("vulnerable", "fail"), ("safe", "pass")):
+    # variants_json is NULL for fixtures written before Tier 2 existed;
+    # fall back to the old hardcoded pair so historical rows keep working.
+    if fixture_row["variants_json"]:
+        variants = json.loads(fixture_row["variants_json"])
+    else:
+        variants = [
+            {"label": "vulnerable", "expected_verdict": "fail"},
+            {"label": "safe", "expected_verdict": "pass"},
+        ]
+
+    for variant in variants:
+        label = variant["label"]
+        expected_verdict = variant["expected_verdict"]
         bicep_path = fixture_dir / f"{label}.bicep"
         json_path = fixture_dir / f"{label}.json"
         try:
@@ -426,19 +469,29 @@ def fixture_validate(
 def gate(
     conn: sqlite3.Connection, state: dict[str, Any], context: dict[str, Any]
 ) -> bool:
-    """Pure logic, no LLM/adapter call: evaluate the latest two `runs` rows
-    for the current check_id.
+    """Pure logic, no LLM/adapter call: evaluate the latest batch of `runs`
+    rows for the current check_id (one row per fixture variant -- two for
+    Tier 1, more for Tier 2 combinations).
 
     Returns True (terminal -- next_on_success) when the rule reaches either
     'validated' or 'rejected' (retries exhausted). Returns False
     (next_on_failure -> loop back to rule_compile) only while retries remain.
     """
     check_id = context["check_id"]
+    fixture_row = conn.execute(
+        "SELECT variants_json FROM fixtures WHERE check_id = ?", (check_id,)
+    ).fetchone()
+    expected_run_count = (
+        len(json.loads(fixture_row["variants_json"]))
+        if fixture_row["variants_json"]
+        else 2
+    )
     runs = conn.execute(
-        "SELECT * FROM runs WHERE check_id = ? ORDER BY id DESC LIMIT 2", (check_id,)
+        "SELECT * FROM runs WHERE check_id = ? ORDER BY id DESC LIMIT ?",
+        (check_id, expected_run_count),
     ).fetchall()
 
-    all_passed = len(runs) == 2 and all(r["passed"] for r in runs)
+    all_passed = len(runs) == expected_run_count and all(r["passed"] for r in runs)
 
     if all_passed:
         conn.execute(
