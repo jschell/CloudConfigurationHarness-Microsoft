@@ -1,4 +1,5 @@
-"""State handlers for atomic-tier (Tier 1) FSM workflows.
+"""State handlers for atomic-tier (Tier 1) and pattern-tier (Tier 2) FSM
+workflows.
 
 Each handler is referenced from a workflow YAML's `handler:` field and
 receives (conn, state, context, raw_result) for LLM states or
@@ -20,6 +21,13 @@ each prompt template must produce):
                         schema_coverage below), one per property in the
                         enumerated property list the prompt was given --
                         NOT just the security-relevant ones.
+    pattern_extract -> JSON array of {"resource_type", "rationale",
+                        "source_doc", "existing_policy_ref",
+                        "proposed_by_model", "property_conditions": [
+                        {"property_path", "risky_value", "safe_value"}, ...]}
+                        objects -- a handful of proposed Tier 2
+                        combinations, NOT an exhaustive sweep (see
+                        apply_pattern_hypotheses).
     rule_compile    -> {"hypothesis_id", "rego_content"}
     fixture_generate-> {"variants": [{"label", "expected_verdict", "bicep"}, ...],
                          "ground_truth_method", "ground_truth_ref"}
@@ -217,6 +225,69 @@ def schema_extract(
     if isinstance(classifications, dict):
         classifications = [classifications]
     apply_schema_classifications(conn, classifications)
+    return True
+
+
+def apply_pattern_hypotheses(
+    conn: sqlite3.Connection, proposals: list[dict[str, Any]]
+) -> int:
+    """Insert Tier 2 (combination) hypotheses. Dedup guard: skip a
+    proposal whose exact set of property_paths already has a tier=2
+    hypothesis for this resource_type -- there is no schema_coverage-style
+    ledger for combinations (the space is too large to enumerate; see
+    docs/plans/active/2026-07-02-tier-2-pattern-checks.md), so this is the
+    only dedup available. A model proposing a genuinely new but
+    overlapping combination will still get through -- that's expected,
+    not a bug.
+    """
+    existing_combos: dict[str, set[frozenset[str]]] = {}
+    for row in conn.execute(
+        "SELECT resource_type, property_conditions FROM hypotheses WHERE tier = 2"
+    ):
+        combo = frozenset(
+            c["property_path"] for c in json.loads(row["property_conditions"])
+        )
+        existing_combos.setdefault(row["resource_type"], set()).add(combo)
+
+    inserted = 0
+    for item in proposals:
+        resource_type = item["resource_type"]
+        conditions = item["property_conditions"]
+        combo = frozenset(c["property_path"] for c in conditions)
+        if combo in existing_combos.get(resource_type, set()):
+            continue
+
+        conn.execute(
+            """INSERT INTO hypotheses
+               (resource_type, property_path, rationale, source_doc, existing_policy_ref,
+                proposed_by_model, tier, property_conditions, status)
+               VALUES (?, ?, ?, ?, ?, ?, 2, ?, 'proposed')""",
+            (
+                resource_type,
+                " + ".join(sorted(combo)),
+                item["rationale"],
+                item["source_doc"],
+                item.get("existing_policy_ref"),
+                item["proposed_by_model"],
+                json.dumps(conditions),
+            ),
+        )
+        existing_combos.setdefault(resource_type, set()).add(combo)
+        inserted += 1
+    conn.commit()
+    return inserted
+
+
+def pattern_extract(
+    conn: sqlite3.Connection,
+    state: dict[str, Any],
+    context: dict[str, Any],
+    raw_result: str,
+) -> bool:
+    proposals = _extract_json(raw_result)
+    if isinstance(proposals, dict):
+        proposals = [proposals]
+    apply_pattern_hypotheses(conn, proposals)
     return True
 
 
