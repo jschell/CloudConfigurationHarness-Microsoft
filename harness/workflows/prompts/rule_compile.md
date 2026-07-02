@@ -34,6 +34,19 @@ single-resource object. Iterate it, e.g.:
         msg := "..."
     }
 
+**Prefer denying on the negation of `safe_value` (`!= "<safe_value>"`)
+over matching one `risky_value` (`== "<risky_value>"`) whenever the
+property's enum has more than two possible values, or the hypothesis
+describes a threshold/minimum (e.g. a TLS/API version).** A single
+`== risky_value` check only catches that one value -- if the enum has
+other equally-bad values (e.g. `minimumTlsVersion`'s `TLS1_0` AND
+`TLS1_1` are both deprecated, but a rule written as `== "TLS1_0"` misses
+`TLS1_1` entirely), those slip through undetected. This isn't
+hypothetical: exactly that bug shipped in AZ-STOR-004 and was only
+caught by hand later. `== risky_value` is fine when the property is
+strictly binary (e.g. `networkAcls.defaultAction` only has `Allow`/
+`Deny`) since there's nothing else it could be.
+
 Pick a check_id of the form `AZ-STOR-NNN` (three digits, next unused
 number for this resource type) and a rule_path of
 `rules/azure/storage/<check_id>.rego`.

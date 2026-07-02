@@ -1,6 +1,7 @@
 harness/engine/.env
 __pycache__/
 harness/journal/*.db
+harness/journal/*.db-journal
 fixtures/**/vulnerable.json
 fixtures/**/safe.json
 .venv/
