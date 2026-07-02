@@ -8,7 +8,7 @@ schema/docs, compiles them into fixture-validated, version-controlled
 Rego rules, and executes those rules repeatably without further LLM
 involvement.
 
-Full design: [docs/plans/multi-model-config-discovery.md](docs/plans/multi-model-config-discovery.md).
+Full design: [docs/plans/complete/multi-model-config-discovery.md](docs/plans/complete/multi-model-config-discovery.md).
 Current state and open gaps: the most recent file in [docs/status/](docs/status/)
 (latest: [docs/status/2026-07-02-status.md](docs/status/2026-07-02-status.md)).
 

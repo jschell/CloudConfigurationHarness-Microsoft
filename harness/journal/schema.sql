@@ -87,7 +87,7 @@ CREATE TABLE IF NOT EXISTS findings (
 -- append-only, one row per write, so every run's actual content survives
 -- regardless of what a later run does to the same check_id -- this is
 -- the "journal tracks provenance and run history" half of the plan's
--- journal/git split (docs/plans/multi-model-config-discovery.md), which
+-- journal/git split (docs/plans/complete/multi-model-config-discovery.md), which
 -- `rules`/`fixtures` alone didn't fully deliver.
 CREATE TABLE IF NOT EXISTS rule_history (
   id INTEGER PRIMARY KEY AUTOINCREMENT,

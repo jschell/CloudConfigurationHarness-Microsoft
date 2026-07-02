@@ -23,7 +23,7 @@ values, from the original design:
   resources (e.g. a storage account's network rules combined with a
   peered VNet's routing). Not implemented; not designed yet either. This
   was an explicit non-goal for the initial phase (see
-  `docs/plans/multi-model-config-discovery.md`).
+  `docs/plans/complete/multi-model-config-discovery.md`).
 
 If you're asked to add a "combination" or "cross-resource" check, that's
 new design work, not a parameter to flip on the existing pipeline.

@@ -625,7 +625,7 @@ prompt's instructions need updating.
        proposal whose exact set of property_paths already has a tier=2
        hypothesis for this resource_type -- there is no schema_coverage-style
        ledger for combinations (the space is too large to enumerate; see
-       docs/plans/2026-07-02-tier-2-pattern-checks.md), so this is the only
+       docs/plans/queue/2026-07-02-tier-2-pattern-checks.md), so this is the only
        dedup available. A model proposing a genuinely new but overlapping
        combination will still get through -- that's expected, not a bug.
        """
@@ -748,7 +748,7 @@ prompt's instructions need updating.
    differs from Tier 1's `schema_extract`:
    ```yaml
    # Tier-2 (pattern-check) FSM for Storage account configuration
-   # hypotheses -- see docs/plans/2026-07-02-tier-2-pattern-checks.md.
+   # hypotheses -- see docs/plans/queue/2026-07-02-tier-2-pattern-checks.md.
    # pattern_extract -> rule_compile -> fixture_generate -> fixture_validate -> gate
    workflow: storage-pattern-tier
    resource_config:
