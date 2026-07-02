@@ -44,6 +44,16 @@ that surfaced while reviewing the tooling for that use:
    storage-pattern-tier.yaml` needs no further changes -- it already
    drives the shared `rule_compile -> fixture_generate ->
    fixture_validate -> gate` states per hypothesis, same as Tier 1.
+4. **Parallelism: yes for verification, no for discovery/compilation.**
+   Discovery (Task 2) and compilation (Task 3) stay sequential -- both
+   write to the shared SQLite journal (`db.py` opens no WAL mode, no
+   `busy_timeout`), and `_check_id_for_hypothesis` does a non-atomic
+   read-then-write, so concurrent `pattern_extract`/`rule_compile`
+   calls risk the exact check_id collision this project already found
+   and fixed once for sequential runs. Task 4's regression check is
+   the opposite case: read-only against the journal, and each
+   check_id's work touches only its own files, so it's safe to fan out
+   across threads for a real speedup with no race risk -- see Task 4.
 
 ## Tech Stack
 
@@ -363,65 +373,205 @@ live journal.
    git commit -m "Build out Tier 2 combination checks for Storage via pattern_extract"
    ```
 
-### Task 4: Full regression check across every rule, Tier 1 and Tier 2 together
+### Task 4: Full regression check across every rule, Tier 1 and Tier 2 together (parallel)
 
-**No new files** -- reuses the variants-aware regression snippet from
-`docs/operating-tiers.md`'s "Regression-check the whole rule set for
-real" section (added when N-variant fixtures were introduced).
+**File:** `harness/tools/regression_check.py` (new) -- promotes the
+ad-hoc snippet from `docs/operating-tiers.md`'s "Regression-check the
+whole rule set for real" section into a real, reusable, parallel tool.
+
+**Why this one is safe to parallelize when Tasks 2-3 are not:** this
+task only *reads* the journal (no `INSERT`/`UPDATE`) and each
+check_id's work -- compile its own `.bicep` fixtures to its own
+`.json` files, run `conftest` against its own rule's namespace -- never
+touches another check_id's files or rows. There's no shared mutable
+state for two workers to race on, unlike `_check_id_for_hypothesis`'s
+non-atomic read-then-write (see the Tier 2 plan's warning and the
+answer given when this parallelization was discussed: don't parallelize
+`pattern_extract`/`rule_compile`/`fixture_generate` against the shared
+SQLite journal -- `db.py` opens no WAL mode and no `busy_timeout`, so
+concurrent writers hit `database is locked` or silently race the
+check_id counter).
+
+Threads, not processes: each unit of work is dominated by waiting on
+`az`/`conftest` subprocess calls (I/O-bound), so `ThreadPoolExecutor`
+gets the parallelism without inter-process SQLite/state-sharing
+complexity `ProcessPoolExecutor` would add for zero benefit here.
 
 #### Steps:
 
-1. Run it against the real journal:
+1. Verify the gap first -- confirm no such tool exists yet:
    ```bash
-   uv run --frozen python -c "
-   import json
-   from harness.journal.db import connect
-   from harness.adapters import bicep_validate, rego_validate
-   from pathlib import Path
+   ls harness/tools/regression_check.py 2>&1
+   ```
+   Expect: `No such file or directory`.
 
-   conn = connect('harness/journal/harness.db')
-   policy_dir = Path('rules/azure/storage')
-   all_ok = True
-   rows = conn.execute('SELECT check_id FROM rules ORDER BY check_id').fetchall()
-   print(f'checking {len(rows)} rules')
-   for r in rows:
-       check_id = r['check_id']
-       fixture_row = conn.execute('SELECT variants_json FROM fixtures WHERE check_id=?', (check_id,)).fetchone()
-       fixture_dir = Path(f'fixtures/azure/storage/{check_id}')
-       variants = json.loads(fixture_row['variants_json']) if fixture_row['variants_json'] else [
-           {'label': 'vulnerable', 'expected_verdict': 'fail'},
-           {'label': 'safe', 'expected_verdict': 'pass'},
-       ]
+2. Write `harness/tools/regression_check.py`:
+   ```python
+   """Regression-check every rule/fixture pair in the journal for real,
+   in parallel. Promotes the ad-hoc snippet from
+   docs/operating-tiers.md's "Regression-check the whole rule set for
+   real" section into a reusable tool.
+
+   Safe to parallelize (unlike pattern_extract/rule_compile/
+   fixture_generate against the shared journal -- see
+   docs/plans/queue/2026-07-02-tier-2-storage-buildout.md's Task 4):
+   this tool only reads the journal, and each check_id's work (compile
+   its own fixtures, run conftest against its own rule) touches only
+   files scoped to that check_id, so there's nothing for two workers to
+   race on. Threads, not processes, since the work is I/O-bound
+   (waiting on az/conftest subprocesses), not CPU-bound.
+
+   Usage:
+       python -m harness.tools.regression_check
+       python -m harness.tools.regression_check --resource-dir rules/azure/storage --workers 8
+   """
+
+   from __future__ import annotations
+
+   import argparse
+   import json
+   from concurrent.futures import ThreadPoolExecutor, as_completed
+   from pathlib import Path
+   from typing import Any
+
+   from harness.adapters import bicep_validate, rego_validate
+   from harness.journal.db import connect
+
+   DEFAULT_WORKERS = 8
+
+
+   def _check_one(check_id: str, fixture_path: str, variants_json: str | None, policy_dir: Path) -> list[dict[str, Any]]:
+       fixture_dir = Path(fixture_path)
+       variants = (
+           json.loads(variants_json)
+           if variants_json
+           else [
+               {"label": "vulnerable", "expected_verdict": "fail"},
+               {"label": "safe", "expected_verdict": "pass"},
+           ]
+       )
+       results = []
        for v in variants:
-           label, expected = v['label'], v['expected_verdict']
-           json_path = fixture_dir / f'{label}.json'
-           bicep_validate.bicep_to_json(fixture_dir / f'{label}.bicep', json_path)
+           label, expected = v["label"], v["expected_verdict"]
+           json_path = fixture_dir / f"{label}.json"
+           bicep_validate.bicep_to_json(fixture_dir / f"{label}.bicep", json_path)
            result = rego_validate.validate(json_path, policy_dir, expected, check_id)
-           all_ok &= result['passed']
-           if not result['passed']:
-               print(check_id, label, '-> FAIL', result)
-   print('ALL PASSED' if all_ok else 'SOME FAILED')
-   "
+           results.append({"check_id": check_id, "label": label, **result})
+       return results
+
+
+   def run(db_path: Path | str | None, policy_dir: Path, workers: int) -> bool:
+       conn = connect(db_path) if db_path else connect()
+       rows = conn.execute(
+           """SELECT r.check_id, f.fixture_path, f.variants_json
+              FROM rules r JOIN fixtures f ON r.check_id = f.check_id
+              ORDER BY r.check_id"""
+       ).fetchall()
+       print(f"checking {len(rows)} rules with {workers} workers")
+
+       all_ok = True
+       with ThreadPoolExecutor(max_workers=workers) as pool:
+           futures = {
+               pool.submit(_check_one, r["check_id"], r["fixture_path"], r["variants_json"], policy_dir): r["check_id"]
+               for r in rows
+           }
+           for future in as_completed(futures):
+               check_id = futures[future]
+               try:
+                   results = future.result()
+               except Exception as exc:  # noqa: BLE001 -- surface any adapter error per check_id
+                   print(f"{check_id}: ERROR {exc}")
+                   all_ok = False
+                   continue
+               for result in results:
+                   if not result["passed"]:
+                       all_ok = False
+                       print(f"{result['check_id']} {result['label']} -> FAIL {result}")
+
+       print("ALL PASSED" if all_ok else "SOME FAILED")
+       return all_ok
+
+
+   def main() -> int:
+       parser = argparse.ArgumentParser(description=__doc__)
+       parser.add_argument("--db", type=Path, default=None)
+       parser.add_argument("--policy-dir", type=Path, default=Path("rules/azure/storage"))
+       parser.add_argument("--workers", type=int, default=DEFAULT_WORKERS)
+       args = parser.parse_args()
+       ok = run(args.db, args.policy_dir, args.workers)
+       return 0 if ok else 1
+
+
+   if __name__ == "__main__":
+       raise SystemExit(main())
+   ```
+
+   Note the join changed from the ad-hoc snippet's `rules` ->
+   `fixtures` lookup-per-row to a single `JOIN` query -- same data,
+   one round trip instead of N, and it means the SQLite connection is
+   only ever touched from the main thread (each worker thread gets
+   plain file I/O and subprocess calls, no `sqlite3.Connection` object
+   crossing threads -- `sqlite3` connections are not thread-safe by
+   default, so this avoids that hazard entirely rather than needing a
+   per-thread connection).
+
+3. Format/lint/typecheck:
+   ```bash
+   uv run --frozen ruff format harness/tools/regression_check.py
+   uv run --frozen ruff check harness/tools/regression_check.py
+   uv run --frozen pyright harness/tools/regression_check.py
+   ```
+   Expect: all clean.
+
+4. Run it against the real journal and compare timing against the old
+   sequential snippet to confirm the parallelism is actually paying
+   for itself (if `az`/`conftest` startup overhead dominates at this
+   rule count, that's a real finding worth noting in Task 5, not a
+   reason to silently keep the tool anyway):
+   ```bash
+   uv run --frozen python -m harness.tools.regression_check
    ```
    Expect: `checking <42 + N validated> rules` then `ALL PASSED`, where
    `N` is however many new Tier 2 checks reached `validated` in Task 3
-   (this count naturally excludes `rejected` ones, since those never
-   got a `rules` row... actually they do get a `rules` row with
-   `status='rejected'` -- rejected rules still have fixtures and still
-   get checked here, and SHOULD still pass this loop, since "rejected"
-   means the gate's retries were exhausted while runs still failed, not
-   that the fixture/rule pairing is inconsistent with what's on disk
-   right now. If a rejected check's fixtures don't validate against
-   its own rule here, re-read `docs/patterns/rego-rule-authoring.md`
-   before assuming it's this plan's bug).
+   (rejected checks still have a `rules` row and fixtures, and SHOULD
+   still pass this loop -- "rejected" means the gate's retries were
+   exhausted while runs still failed, not that the fixture/rule pairing
+   on disk right now is inconsistent. If a rejected check's fixtures
+   don't validate against its own rule here, re-read
+   `docs/patterns/rego-rule-authoring.md` before assuming it's this
+   plan's bug).
 
-2. If anything fails, do not proceed to Task 5 -- diagnose using the
+5. If anything fails, do not proceed to Task 5 -- diagnose using the
    same process as the original Tier 2 plan (check namespace
    contamination first, per
    `docs/patterns/deterministic-check-id-assignment.md`, then the
    `==`-vs-`!=` guidance in `docs/patterns/rego-rule-authoring.md`).
+   `--workers 1` reproduces the old strictly-sequential behavior if
+   parallelism itself is ever suspected of causing a spurious failure
+   (it shouldn't, given the independence argument above, but ruling it
+   out is one flag away).
 
-3. No commit -- this task is pure verification.
+6. Also replace the stale sequential snippet in
+   `docs/operating-tiers.md`'s "Regression-check the whole rule set for
+   real" section with a pointer to this tool, so the docs don't keep
+   two copies of the same logic to maintain:
+   ```
+   ### Regression-check the whole rule set for real
+
+   ```bash
+   uv run --frozen python -m harness.tools.regression_check
+   ```
+
+   Parallel (`ThreadPoolExecutor`, I/O-bound on `az`/`conftest`
+   subprocess calls) and safe to parallelize because it's read-only
+   against the journal and each check_id's work touches only its own
+   files -- see `harness/tools/regression_check.py`'s module docstring.
+   Use `--workers 1` to reproduce strictly-sequential behavior, or
+   `--policy-dir`/`--db` to point at a different resource type's rules
+   or a scratch journal.
+   ```
+
+7. Commit: `"Add parallel regression_check.py tool, replacing the ad-hoc sequential snippet"`
 
 ### Task 5: Update docs with the real Tier 2 check count and any new lesson
 
