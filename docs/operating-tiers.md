@@ -112,42 +112,84 @@ scratch DB at all -- test `_check_id_for_hypothesis` directly (it's pure,
 no file I/O), and reserve full end-to-end runs for the real journal
 where check_id collisions are actually prevented by design.
 
-## Sharing one journal across worktrees
+## A real hazard: git worktrees don't bring gitignored state with them
 
-`harness/journal/harness.db` is gitignored -- it's operational state,
-not code, so a git worktree branching off `main` does **not** get a
-copy of it the way it gets a copy of every tracked file. Two different
-plans (Tier 2 Storage buildout and KeyVault Tier 1 onboarding) were
-executed concurrently in separate worktrees this way (2026-07-02) and
-diverged for real: one session copied the journal into its worktree at
-setup and kept writing to that local copy, while the other passed
-`--db` pointing at main's journal directly. Main ended up with 8 new
-KeyVault rules the copied worktree didn't have; the copied worktree
-ended up with 9 new Storage Tier 2 rules main didn't have. Reconciling
-required a one-off script reinserting the missing rows with freshly
-assigned autoincrement IDs (remapping every foreign key reference) --
-recoverable because nothing was silently overwritten (`INSERT`, not
-`UPDATE`, and check_id prefixes never collided between the two), but
-not something to depend on repeating cleanly.
+`harness/journal/harness.db`, `harness/engine/.env`, and the `az` CLI
+PATH prefix are all either gitignored or shell-local -- a git worktree
+branching off `main` does **not** get a copy of any of them the way it
+gets a copy of every tracked file. A fresh worktree starts with an empty
+journal, no API key, and no `az` on PATH, even though the main checkout
+right next to it has all three.
+
+This bit twice on the same day (2026-07-02), two different ways, running
+Tier 2 Storage buildout and KeyVault Tier 1 onboarding concurrently in
+separate worktrees:
+
+- One session copied `harness.db` into its worktree at setup and kept
+  writing to that local copy instead of pointing `--db` at the real
+  file. The two journals diverged for real -- main ended up with 8 new
+  KeyVault rules the copied worktree didn't have, the copied worktree
+  ended up with 9 new Storage Tier 2 rules main didn't have. Reconciling
+  required a one-off script reinserting the missing rows with freshly
+  assigned autoincrement IDs (remapping every foreign key reference) --
+  recoverable because nothing was silently overwritten (`INSERT`, not
+  `UPDATE`, and check_id prefixes never collided), but not something to
+  depend on repeating cleanly.
+- The other session's worktree was also missing `.env`/PATH. Those at
+  least fail loudly (`preflight.require` refuses to fake a result) --
+  but only *after* that state's journal write already happened, so the
+  crash left a stale `workflow_runs` row stuck in `status='running'` and
+  a partially-written `rules`/`fixtures` row for a hypothesis with no
+  fixture files on disk yet.
 
 **Don't copy `harness/journal/harness.db` into a new worktree.** Point
 every workflow/tool invocation's `--db` at the one real file instead
-(relative path from a worktree under `.worktrees/<name>/`:
-`--db ../../harness/journal/harness.db`). The journal stays centralized
-and single-sourced; only the `.rego`/`.bicep` files stay git-isolated
-per worktree (by design -- see the hazard above and
-`docs/patterns/deterministic-check-id-assignment.md`), to be merged
-into `main` through the normal git merge when a worktree's branch is
-done, not by hand-copying files across worktrees.
+(`--db <absolute path>`, or the relative `../../harness/journal/harness.db`
+from a worktree under `.worktrees/<name>/` -- every `harness/tools/*.py`
+entry point accepts `--db`). If a worktree has already accumulated its
+own separate `harness.db`, migrate any rows it holds into the real
+journal (`ATTACH DATABASE`, `INSERT ... SELECT`, remapping foreign keys
+since autoincrement ids won't match) rather than losing or duplicating
+the work, then delete the stray file. The journal stays centralized and
+single-sourced; only the `.rego`/`.bicep` files stay git-isolated per
+worktree (by design -- see the hazard above and
+`docs/patterns/deterministic-check-id-assignment.md`), to be merged into
+`main` through the normal git merge when a worktree's branch is done,
+not by hand-copying files across worktrees.
 
-This does not make truly *simultaneous* writes safe -- `db.py` opens
-no WAL mode and no `busy_timeout`, and `_check_id_for_hypothesis` still
-does a non-atomic read-then-write, so two `rule_compile` calls against
-the same shared file at the literal same instant can still race or hit
-`database is locked`. Sharing one file only solves the fork-and-merge
-problem; avoiding the concurrent-write problem is still a procedural
-discipline (don't run two LLM-writing states against the same journal
-at the same moment), not something the code enforces.
+The other two gaps are cheaper to close but easy to miss the first time:
+
+1. Copy `harness/engine/.env` from the main checkout (it's a static
+   secrets file, not shared mutable state -- a one-time copy is correct,
+   unlike the journal).
+2. `export PATH=".../CLI2/wbin:$PATH"` in the same shell before invoking
+   any tool that needs `az`.
+3. On Windows specifically, use `C:/...`-style paths when a path is
+   embedded inside a `python -c` string, not git-bash's `/c/...` syntax --
+   MSYS auto-converts `/c/...` only when it's a standalone argv token
+   passed to a native binary, not when it's a substring inside a larger
+   quoted argument. Getting this wrong doesn't error; native Windows
+   Python treats `/c/Users/...` as a relative path from the current
+   drive's root, so `db_path.parent.mkdir(parents=True, exist_ok=True)`
+   silently creates a whole new stray directory tree (e.g. `C:\c\Users\...`)
+   with a fresh, empty `harness.db` inside it.
+4. If two worktrees are both pointed at the real journal at once (e.g.
+   two plans running concurrently), an ad-hoc regression-check script
+   that queries `rules` by `resource_type` alone will see the other
+   worktree's not-yet-merged check_ids too. Filter by whether the row's
+   `rule_path` actually exists on disk in *this* checkout before treating
+   a missing fixture as a failure -- it may just belong to a sibling
+   worktree's in-flight branch, not a real regression.
+
+Sharing one file does not make truly *simultaneous* writes safe --
+`db.py` opens no WAL mode and no `busy_timeout`, and
+`_check_id_for_hypothesis` still does a non-atomic read-then-write, so
+two `rule_compile` calls against the same shared file at the literal
+same instant can still race or hit `database is locked`. Sharing one
+file only solves the fork-and-merge problem; avoiding the
+concurrent-write problem is still a procedural discipline (don't run
+two LLM-writing states against the same journal at the same moment),
+not something the code enforces.
 
 ## Commands
 
