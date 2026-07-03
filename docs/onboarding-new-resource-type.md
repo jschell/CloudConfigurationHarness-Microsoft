@@ -133,6 +133,16 @@ other's check_id numbering (see
 Same pattern as `docs/operating-tiers.md`'s regression-check snippet, but
 pointed at the new `rules_dir`/`fixtures_dir`.
 
+KeyVault was carried all the way through steps 3-6 for real -- not just
+bootstrapped -- proving this process (and `handlers.py`'s
+resource-type-generic design) holds up on a second resource type, not
+just Storage. Every discovered Tier 1 hypothesis compiled to a validated
+rule on the first pass, including the array-typed `accessPolicies[]`/
+`networkAcls.ipRules[]` properties flagged as an open question during
+bootstrap -- the model produced the correct `some x in array; x == value`
+Rego idiom on its own, with no example of it in `rule_compile.md`, so no
+prompt-template change was needed.
+
 ## Before you start: read these
 
 - `docs/patterns/schema-coverage-discovery.md` -- why enumeration is

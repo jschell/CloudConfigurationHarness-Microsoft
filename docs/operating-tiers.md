@@ -105,6 +105,54 @@ scratch DB at all -- test `_check_id_for_hypothesis` directly (it's pure,
 no file I/O), and reserve full end-to-end runs for the real journal
 where check_id collisions are actually prevented by design.
 
+## A real hazard: git worktrees don't bring gitignored state with them
+
+`harness/journal/harness.db`, `harness/engine/.env`, and the `az` CLI
+PATH prefix are all either gitignored or shell-local -- `git worktree
+add` only checks out committed files, so a fresh worktree gets an empty
+journal, no API key, and no `az` on PATH, even though the main checkout
+right next to it has all three. Running a real end-to-end plan in a
+worktree without fixing this doesn't fail loudly and consistently: the
+journal silently starts a second, disconnected database (schema_coverage/
+hypotheses rows land somewhere no other checkout will ever see), while
+the missing `.env`/PATH failures do at least raise (`preflight.require`
+refuses to fake a result) -- but only *after* the journal write already
+happened, so a crash mid-buildout can leave a stale `workflow_runs` row
+stuck in `status='running'` and a partially-written `rules`/`fixtures`
+row for the hypothesis that has no fixture files on disk yet.
+
+Before running anything that touches the journal from inside a worktree:
+
+1. Point every journal-touching command at the main checkout's real
+   `harness/journal/harness.db` via `--db <absolute path>` (all the
+   `harness/tools/*.py` entry points accept it). Don't let a worktree
+   accumulate its own separate `harness.db` -- if one already has, migrate
+   any rows it holds into the real journal (`ATTACH DATABASE`, `INSERT
+   ... SELECT`, remapping foreign keys since autoincrement ids won't
+   match) rather than losing or duplicating the work, then delete the
+   stray file.
+2. Copy `harness/engine/.env` from the main checkout (it's a static
+   secrets file, not shared mutable state -- a one-time copy is correct,
+   unlike the journal).
+3. `export PATH=".../CLI2/wbin:$PATH"` in the same shell before invoking
+   any tool that needs `az`.
+4. On Windows specifically, use `C:/...`-style paths when a path is
+   embedded inside a `python -c` string, not git-bash's `/c/...` syntax --
+   MSYS auto-converts `/c/...` only when it's a standalone argv token
+   passed to a native binary, not when it's a substring inside a larger
+   quoted argument. Getting this wrong doesn't error; native Windows
+   Python treats `/c/Users/...` as a relative path from the current
+   drive's root, so `db_path.parent.mkdir(parents=True, exist_ok=True)`
+   silently creates a whole new stray directory tree (e.g. `C:\c\Users\...`)
+   with a fresh, empty `harness.db` inside it.
+5. If two worktrees are both pointed at the real journal at once (e.g.
+   two plans running concurrently), an ad-hoc regression-check script
+   that queries `rules` by `resource_type` alone will see the other
+   worktree's not-yet-merged check_ids too. Filter by whether the row's
+   `rule_path` actually exists on disk in *this* checkout before treating
+   a missing fixture as a failure -- it may just belong to a sibling
+   worktree's in-flight branch, not a real regression.
+
 ## Commands
 
 All commands below default to the real, persistent journal
