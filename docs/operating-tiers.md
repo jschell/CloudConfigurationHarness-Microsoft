@@ -12,10 +12,17 @@ values, from the original design:
 - **Tier 2 (pattern)** -- a *combination* of properties on one resource
   is risky even though no single property is, by itself (e.g.
   `allowSharedKeyAccess == true` combined with
-  `networkAcls.defaultAction == "Allow"`, proven live as `AZ-STOR-042`).
-  **Implemented** (see
-  `docs/plans/active/2026-07-02-tier-2-pattern-checks.md` for the
-  design): `pattern_extract` proposes a
+  `networkAcls.defaultAction == "Allow"`). **Implemented and built out
+  for Storage** (see `docs/plans/complete/2026-07-02-tier-2-pattern-checks.md`
+  for the pipeline design and
+  `docs/plans/active/2026-07-02-tier-2-storage-buildout.md` for the
+  real discovery run -- multiple `AZ-STOR-PAT-*` checks now live,
+  covering public-access/network-ACL combinations, protocol-plus-network
+  exposure (NFSv3, SFTP), auth-plus-transport combinations, SAS/key
+  rotation gaps, and a deceptive-immutability-policy trap; check
+  `SELECT COUNT(*) FROM rules WHERE check_id LIKE 'AZ-STOR-PAT%'` against
+  the real journal for the current count rather than trusting a number
+  in this doc, which will drift): `pattern_extract` proposes a
   handful of plausible combinations reasoning from known attack
   patterns -- NOT an exhaustive sweep like Tier 1's `schema_coverage`
   (even just pairs of Storage's ~72 writable properties is ~2,500
@@ -104,6 +111,43 @@ Or, safer still: don't test `rule_compile`/`fixture_generate` against a
 scratch DB at all -- test `_check_id_for_hypothesis` directly (it's pure,
 no file I/O), and reserve full end-to-end runs for the real journal
 where check_id collisions are actually prevented by design.
+
+## Sharing one journal across worktrees
+
+`harness/journal/harness.db` is gitignored -- it's operational state,
+not code, so a git worktree branching off `main` does **not** get a
+copy of it the way it gets a copy of every tracked file. Two different
+plans (Tier 2 Storage buildout and KeyVault Tier 1 onboarding) were
+executed concurrently in separate worktrees this way (2026-07-02) and
+diverged for real: one session copied the journal into its worktree at
+setup and kept writing to that local copy, while the other passed
+`--db` pointing at main's journal directly. Main ended up with 8 new
+KeyVault rules the copied worktree didn't have; the copied worktree
+ended up with 9 new Storage Tier 2 rules main didn't have. Reconciling
+required a one-off script reinserting the missing rows with freshly
+assigned autoincrement IDs (remapping every foreign key reference) --
+recoverable because nothing was silently overwritten (`INSERT`, not
+`UPDATE`, and check_id prefixes never collided between the two), but
+not something to depend on repeating cleanly.
+
+**Don't copy `harness/journal/harness.db` into a new worktree.** Point
+every workflow/tool invocation's `--db` at the one real file instead
+(relative path from a worktree under `.worktrees/<name>/`:
+`--db ../../harness/journal/harness.db`). The journal stays centralized
+and single-sourced; only the `.rego`/`.bicep` files stay git-isolated
+per worktree (by design -- see the hazard above and
+`docs/patterns/deterministic-check-id-assignment.md`), to be merged
+into `main` through the normal git merge when a worktree's branch is
+done, not by hand-copying files across worktrees.
+
+This does not make truly *simultaneous* writes safe -- `db.py` opens
+no WAL mode and no `busy_timeout`, and `_check_id_for_hypothesis` still
+does a non-atomic read-then-write, so two `rule_compile` calls against
+the same shared file at the literal same instant can still race or hit
+`database is locked`. Sharing one file only solves the fork-and-merge
+problem; avoiding the concurrent-write problem is still a procedural
+discipline (don't run two LLM-writing states against the same journal
+at the same moment), not something the code enforces.
 
 ## Commands
 
@@ -215,39 +259,30 @@ uv run --frozen python -m harness.engine.runner harness/workflows/storage-patter
 
 ### Regression-check the whole rule set for real
 
-Not currently automated as a single command (see "Known gaps" below);
-the pattern used throughout this project's history. Reads each fixture's
-`variants_json` so it covers Tier 1 (2 variants) and Tier 2 (N variants)
-rules in the same loop -- falls back to the original vulnerable/safe
-pair for any older row with `variants_json IS NULL`:
-
-```python
-import json
-from harness.journal.db import connect
-from harness.adapters import bicep_validate, rego_validate
-from pathlib import Path
-
-conn = connect("harness/journal/harness.db")
-policy_dir = Path("rules/azure/storage")
-for r in conn.execute("SELECT check_id FROM rules ORDER BY check_id"):
-    check_id = r["check_id"]
-    fixture_row = conn.execute(
-        "SELECT variants_json FROM fixtures WHERE check_id = ?", (check_id,)
-    ).fetchone()
-    variants = (
-        json.loads(fixture_row["variants_json"])
-        if fixture_row["variants_json"]
-        else [{"label": "vulnerable", "expected_verdict": "fail"},
-              {"label": "safe", "expected_verdict": "pass"}]
-    )
-    fixture_dir = Path(f"fixtures/azure/storage/{check_id}")
-    for v in variants:
-        label, expected = v["label"], v["expected_verdict"]
-        json_path = fixture_dir / f"{label}.json"
-        bicep_validate.bicep_to_json(fixture_dir / f"{label}.bicep", json_path)
-        result = rego_validate.validate(json_path, policy_dir, expected, check_id)
-        assert result["passed"], (check_id, label, result["actual_verdict"])
+```bash
+uv run --frozen python -m harness.tools.regression_check
 ```
+
+Parallel (`ThreadPoolExecutor`, I/O-bound on `az`/`conftest` subprocess
+calls) and safe to parallelize because it's read-only against the
+journal and each check_id's work touches only its own files -- see
+`harness/tools/regression_check.py`'s module docstring. Confirmed
+against Storage's 52 rules: 10m34s sequential (`--workers 1`) vs 2m40s
+with the default 8 workers, both `ALL PASSED`.
+
+Reads each fixture's `variants_json` so it covers Tier 1 (2 variants)
+and Tier 2 (N variants) rules in the same loop -- falls back to the
+original vulnerable/safe pair for any older row with `variants_json IS
+NULL`. Use `--workers 1` to reproduce strictly-sequential behavior, and
+`--policy-dir`/`--db` to point at a different resource type's rules or
+a scratch journal. `--policy-dir` also filters *which* rules are
+checked (by `rule_path` prefix), not just where `conftest` loads
+policies from -- necessary once multiple resource types can share one
+journal across git worktrees (see "Sharing one journal across
+worktrees" below): a worktree only has the fixture/rule files for its
+own resource type on disk, so checking every rule in the journal
+regardless of `--policy-dir` would try to compile fixtures that don't
+exist there and report them as false failures.
 
 ## Known gaps (not actioned, flagged deliberately)
 

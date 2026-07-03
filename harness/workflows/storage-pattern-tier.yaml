@@ -12,6 +12,7 @@
 workflow: storage-pattern-tier
 resource_config:
   resource_type: Microsoft.Storage/storageAccounts
+  tier: 2
   check_id_prefix: AZ-STOR-PAT
   rules_dir: rules/azure/storage
   fixtures_dir: fixtures/azure/storage
