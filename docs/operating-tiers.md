@@ -12,10 +12,17 @@ values, from the original design:
 - **Tier 2 (pattern)** -- a *combination* of properties on one resource
   is risky even though no single property is, by itself (e.g.
   `allowSharedKeyAccess == true` combined with
-  `networkAcls.defaultAction == "Allow"`, proven live as `AZ-STOR-042`).
-  **Implemented** (see
-  `docs/plans/active/2026-07-02-tier-2-pattern-checks.md` for the
-  design): `pattern_extract` proposes a
+  `networkAcls.defaultAction == "Allow"`). **Implemented and built out
+  for Storage** (see `docs/plans/complete/2026-07-02-tier-2-pattern-checks.md`
+  for the pipeline design and
+  `docs/plans/active/2026-07-02-tier-2-storage-buildout.md` for the
+  real discovery run -- multiple `AZ-STOR-PAT-*` checks now live,
+  covering public-access/network-ACL combinations, protocol-plus-network
+  exposure (NFSv3, SFTP), auth-plus-transport combinations, SAS/key
+  rotation gaps, and a deceptive-immutability-policy trap; check
+  `SELECT COUNT(*) FROM rules WHERE check_id LIKE 'AZ-STOR-PAT%'` against
+  the real journal for the current count rather than trusting a number
+  in this doc, which will drift): `pattern_extract` proposes a
   handful of plausible combinations reasoning from known attack
   patterns -- NOT an exhaustive sweep like Tier 1's `schema_coverage`
   (even just pairs of Storage's ~72 writable properties is ~2,500
